@@ -1,0 +1,225 @@
+ticker,name,category,contract_mult,currency
+SPY,SPDR S&P 500 ETF,ETF,100,USD
+QQQ,Invesco QQQ Trust,ETF,100,USD
+AAPL,Apple Inc.,Equity,100,USD
+MSFT,Microsoft Corp.,Equity,100,USD
+NVDA,NVIDIA Corp.,Equity,100,USD
+AMZN,Amazon.com Inc.,Equity,100,USD
+GOOGL,Alphabet Inc.,Equity,100,USD
+META,Meta Platforms,Equity,100,USD
+TSLA,Tesla Inc.,Equity,100,USD
+BRK-B,Berkshire Hathaway B,Equity,100,USD
+JPM,JPMorgan Chase,Equity,100,USD
+BAC,Bank of America,Equity,100,USD
+GS,Goldman Sachs,Equity,100,USD
+BTC-USD,Bitcoin USD,Crypto,1,USD
+ETH-USD,Ethereum USD,Crypto,1,USD
+BNB-USD,BNB USD,Crypto,1,USD
+SOL-USD,Solana USD,Crypto,1,USD
+XRP-USD,XRP USD,Crypto,1,USD
+^DJI,Dow Jones Industrial Average,Index,100,USD
+^GSPC,S&P 500 Index,Index,100,USD
+^NDX,Nasdaq 100 Index,Index,100,USD
+^FCHI,CAC 40 Index,Index,100,EUR
+^GDAXI,DAX Index,Index,100,EUR
+^FTSE,FTSE 100 Index,Index,100,GBP
+^STOXX50E,Euro Stoxx 50,Index,100,EUR
+^N225,Nikkei 225,Index,100,JPY
+^HSI,Hang Seng Index,Index,100,HKD
+^VIX,CBOE Volatility Index,Index,100,USD
+0700.HK,Tencent Holdings,Equity,100,HKD
+1299.HK,AIA Group,Equity,100,HKD
+3690.HK,Meituan,Equity,100,HKD
+9988.HK,Alibaba Group,Equity,100,HKD
+6758.T,Sony Group,Equity,100,JPY
+7203.T,Toyota Motor,Equity,100,JPY
+7974.T,Nintendo,Equity,100,JPY
+9432.T,NTT,Equity,100,JPY
+9984.T,SoftBank Group,Equity,100,JPY
+GC=F,Gold Futures,Commodity,100,USD
+SI=F,Silver Futures,Commodity,100,USD
+CL=F,WTI Crude Oil Futures,Commodity,100,USD
+BZ=F,Brent Crude Oil Futures,Commodity,100,USD
+MCL=F,Micro WTI Crude Oil,Commodity,100,USD
+CC=F,Cocoa Futures,Commodity,100,USD
+EURUSD=X,EUR/USD,Forex,100000,USD
+JPY=X,USD/JPY,Forex,100000,USD
+GBP=X,USD/GBP,Forex,100000,USD
+RHM.DE,Rheinmetall AG,Equity,100,EUR
+TTE.PA,TotalEnergies,Equity,100,EUR
+AIR.PA,Airbus SE,Equity,100,EUR
+BNP.PA,BNP Paribas,Equity,100,EUR
+V,Visa Inc.,Equity,100,USD
+MA,Mastercard Inc.,Equity,100,USD
+UNH,UnitedHealth Group,Equity,100,USD
+JNJ,Johnson & Johnson,Equity,100,USD
+PFE,Pfizer Inc.,Equity,100,USD
+ABBV,AbbVie Inc.,Equity,100,USD
+LLY,Eli Lilly,Equity,100,USD
+MRK,Merck & Co.,Equity,100,USD
+XOM,Exxon Mobil,Equity,100,USD
+CVX,Chevron Corp.,Equity,100,USD
+COP,ConocoPhillips,Equity,100,USD
+NEE,NextEra Energy,Equity,100,USD
+DUK,Duke Energy,Equity,100,USD
+WMT,Walmart Inc.,Equity,100,USD
+COST,Costco Wholesale,Equity,100,USD
+PG,Procter & Gamble,Equity,100,USD
+KO,Coca-Cola Co.,Equity,100,USD
+PEP,PepsiCo Inc.,Equity,100,USD
+MCD,McDonald's Corp.,Equity,100,USD
+SBUX,Starbucks Corp.,Equity,100,USD
+NKE,Nike Inc.,Equity,100,USD
+DIS,Walt Disney Co.,Equity,100,USD
+NFLX,Netflix Inc.,Equity,100,USD
+AMD,Advanced Micro Devices,Equity,100,USD
+INTC,Intel Corp.,Equity,100,USD
+QCOM,Qualcomm Inc.,Equity,100,USD
+AVGO,Broadcom Inc.,Equity,100,USD
+CRM,Salesforce Inc.,Equity,100,USD
+ORCL,Oracle Corp.,Equity,100,USD
+IBM,IBM Corp.,Equity,100,USD
+PYPL,PayPal Holdings,Equity,100,USD
+SQ,Block Inc.,Equity,100,USD
+COIN,Coinbase Global,Equity,100,USD
+MSTR,MicroStrategy Inc.,Equity,100,USD
+HOOD,Robinhood Markets,Equity,100,USD
+CAT,Caterpillar Inc.,Equity,100,USD
+BA,Boeing Co.,Equity,100,USD
+LMT,Lockheed Martin,Equity,100,USD
+RTX,RTX Corp.,Equity,100,USD
+GE,GE Aerospace,Equity,100,USD
+MMM,3M Company,Equity,100,USD
+HON,Honeywell Intl,Equity,100,USD
+T,AT&T Inc.,Equity,100,USD
+VZ,Verizon Communications,Equity,100,USD
+CMCSA,Comcast Corp.,Equity,100,USD
+SPG,Simon Property Group,Equity,100,USD
+AMT,American Tower Corp.,Equity,100,USD
+PLD,Prologis Inc.,Equity,100,USD
+BLK,BlackRock Inc.,Equity,100,USD
+MS,Morgan Stanley,Equity,100,USD
+C,Citigroup Inc.,Equity,100,USD
+WFC,Wells Fargo,Equity,100,USD
+AXP,American Express,Equity,100,USD
+ASML.AS,ASML Holding,Equity,100,EUR
+SAP.DE,SAP SE,Equity,100,EUR
+SIE.DE,Siemens AG,Equity,100,EUR
+ALV.DE,Allianz SE,Equity,100,EUR
+MUV2.DE,Munich Re,Equity,100,EUR
+MC.PA,LVMH,Equity,100,EUR
+OR.PA,L'Oréal SA,Equity,100,EUR
+SAN.PA,Sanofi SA,Equity,100,EUR
+CS.PA,AXA SA,Equity,100,EUR
+STMPA.PA,STMicroelectronics,Equity,100,EUR
+NESN.SW,Nestlé SA,Equity,100,CHF
+ROG.SW,Roche Holding,Equity,100,CHF
+NOVN.SW,Novartis AG,Equity,100,CHF
+UBSG.SW,UBS Group,Equity,100,CHF
+HSBA.L,HSBC Holdings,Equity,100,GBP
+BP.L,BP PLC,Equity,100,GBP
+SHEL.L,Shell PLC,Equity,100,GBP
+RIO.L,Rio Tinto PLC,Equity,100,GBP
+AZN.L,AstraZeneca PLC,Equity,100,GBP
+UCG.MI,UniCredit SpA,Equity,100,EUR
+ENI.MI,Eni SpA,Equity,100,EUR
+ENEL.MI,Enel SpA,Equity,100,EUR
+IBE.MC,Iberdrola SA,Equity,100,EUR
+SAN.MC,Banco Santander,Equity,100,EUR
+ADANIENT.NS,Adani Enterprises,Equity,100,INR
+RELIANCE.NS,Reliance Industries,Equity,100,INR
+TCS.NS,Tata Consultancy,Equity,100,INR
+005930.KS,Samsung Electronics,Equity,100,KRW
+000660.KS,SK Hynix,Equity,100,KRW
+ADA-USD,Cardano USD,Crypto,1,USD
+DOT-USD,Polkadot USD,Crypto,1,USD
+AVAX-USD,Avalanche USD,Crypto,1,USD
+MATIC-USD,Polygon USD,Crypto,1,USD
+LINK-USD,Chainlink USD,Crypto,1,USD
+UNI-USD,Uniswap USD,Crypto,1,USD
+ATOM-USD,Cosmos USD,Crypto,1,USD
+LTC-USD,Litecoin USD,Crypto,1,USD
+DOGE-USD,Dogecoin USD,Crypto,1,USD
+SHIB-USD,Shiba Inu USD,Crypto,1,USD
+ES=F,S&P 500 Futures,Futures,50,USD
+NQ=F,Nasdaq-100 Futures,Futures,20,USD
+YM=F,Dow Jones Futures,Futures,5,USD
+RTY=F,Russell 2000 Futures,Futures,50,USD
+NKD=F,Nikkei 225 Futures,Futures,500,USD
+ZB=F,30-Year T-Bond Futures,Futures,1000,USD
+ZN=F,10-Year T-Note Futures,Futures,1000,USD
+ZF=F,5-Year T-Note Futures,Futures,1000,USD
+ZT=F,2-Year T-Note Futures,Futures,2000,USD
+GF=F,Feeder Cattle Futures,Commodity,500,USD
+LE=F,Live Cattle Futures,Commodity,400,USD
+HE=F,Lean Hog Futures,Commodity,400,USD
+ZW=F,Wheat Futures,Commodity,50,USD
+ZC=F,Corn Futures,Commodity,50,USD
+ZS=F,Soybean Futures,Commodity,50,USD
+ZO=F,Oat Futures,Commodity,1000,USD
+KC=F,Coffee Futures,Commodity,375,USD
+SB=F,Sugar #11 Futures,Commodity,1120,USD
+CT=F,Cotton Futures,Commodity,500,USD
+LBS=F,Lumber Futures,Commodity,110,USD
+NG=F,Natural Gas Futures,Commodity,10000,USD
+HO=F,Heating Oil Futures,Commodity,42000,USD
+RB=F,RBOB Gasoline Futures,Commodity,42000,USD
+PL=F,Platinum Futures,Commodity,50,USD
+PA=F,Palladium Futures,Commodity,100,USD
+HG=F,Copper Futures,Commodity,25000,USD
+ALI=F,Aluminum Futures,Commodity,25000,USD
+BTC=F,Bitcoin Futures CME,Futures,5,USD
+MBT=F,Micro Bitcoin Futures,Futures,0.1,USD
+ETH=F,Ether Futures CME,Futures,50,USD
+GBPUSD=X,GBP/USD,Forex,100000,USD
+AUDUSD=X,AUD/USD,Forex,100000,USD
+USDCHF=X,USD/CHF,Forex,100000,USD
+USDCAD=X,USD/CAD,Forex,100000,USD
+NZDUSD=X,NZD/USD,Forex,100000,USD
+EURGBP=X,EUR/GBP,Forex,100000,USD
+EURJPY=X,EUR/JPY,Forex,100000,USD
+USDHKD=X,USD/HKD,Forex,100000,USD
+USDSGD=X,USD/SGD,Forex,100000,USD
+USDZAR=X,USD/ZAR,Forex,100000,USD
+USDMXN=X,USD/MXN,Forex,100000,USD
+USDBRL=X,USD/BRL,Forex,100000,USD
+TLT,iShares 20Y Treasury Bond ETF,ETF,100,USD
+IEF,iShares 7-10Y Treasury ETF,ETF,100,USD
+SHY,iShares 1-3Y Treasury ETF,ETF,100,USD
+LQD,iShares Investment Grade Corp Bond ETF,ETF,100,USD
+HYG,iShares High Yield Corp Bond ETF,ETF,100,USD
+EMB,iShares EM Bond ETF,ETF,100,USD
+BNDX,Vanguard Total Intl Bond ETF,ETF,100,USD
+MBB,iShares MBS ETF,ETF,100,USD
+GLD,SPDR Gold Shares ETF,ETF,100,USD
+SLV,iShares Silver Trust ETF,ETF,100,USD
+USO,United States Oil Fund ETF,ETF,100,USD
+UNG,United States Natural Gas ETF,ETF,100,USD
+DBA,Invesco DB Agriculture ETF,ETF,100,USD
+DBB,Invesco DB Base Metals ETF,ETF,100,USD
+PDBC,Invesco Optimum Yield Diversified Commodity ETF,ETF,100,USD
+EEM,iShares MSCI Emerging Markets ETF,ETF,100,USD
+EFA,iShares MSCI EAFE ETF,ETF,100,USD
+VGK,Vanguard FTSE Europe ETF,ETF,100,USD
+EWJ,iShares MSCI Japan ETF,ETF,100,USD
+FXI,iShares China Large-Cap ETF,ETF,100,USD
+EWZ,iShares MSCI Brazil ETF,ETF,100,USD
+EWY,iShares MSCI South Korea ETF,ETF,100,USD
+EWG,iShares MSCI Germany ETF,ETF,100,USD
+ARKK,ARK Innovation ETF,ETF,100,USD
+XLE,Energy Select SPDR ETF,ETF,100,USD
+XLF,Financial Select SPDR ETF,ETF,100,USD
+XLK,Technology Select SPDR ETF,ETF,100,USD
+XLV,Health Care Select SPDR ETF,ETF,100,USD
+XLI,Industrial Select SPDR ETF,ETF,100,USD
+XLP,Consumer Staples Select SPDR ETF,ETF,100,USD
+XLY,Consumer Discretionary Select SPDR ETF,ETF,100,USD
+XLU,Utilities Select SPDR ETF,ETF,100,USD
+XLRE,Real Estate Select SPDR ETF,ETF,100,USD
+XLB,Materials Select SPDR ETF,ETF,100,USD
+IWM,iShares Russell 2000 ETF,ETF,100,USD
+ITA,iShares U.S. Aerospace & Defense ETF,ETF,100,USD
+TIP,iShares TIPS Bond ETF,ETF,100,USD
+DBC,Invesco DB Commodity Index Tracking Fund,ETF,100,USD
+VNQ,Vanguard Real Estate ETF,ETF,100,USD
+BIL,SPDR Bloomberg 1-3 Month T-Bill ETF,ETF,100,USD
