@@ -17,7 +17,7 @@ lecture des actualités Google News : thèmes géopolitiques (conflits, sanction
 signaux par actif : probabilité de hausse et rendement attendu à 1 mois (Gradient Boosting + régression logistique), facteurs explicatifs, validation walk-forward purgée (précision, AUC, IC, calibration) ;
 conseils pour le portefeuille actif : alertes (concentration, crypto, cash, régime) et écarts vs allocation IA.
 🤖 Auto-Portefeuille — la plateforme construit seule un portefeuille selon les conditions de marché : profil (Prudent → Agressif), bornes par classe ajustées au régime, rendements Black-Litterman (vues ML + actualités), covariance Ledoit-Wolf, 5 méthodes (utilité, Sharpe, parité de risque inclinée, variance min., HRP) ; backtest walk-forward sans biais d'anticipation vs S&P 500 / 60-40 / équipondéré, stress tests (2008, Covid, 2022, choc géopolitique, stagflation…), Monte Carlo à 1 an, exécution des ordres en un clic dans un portefeuille.
-🦅 Hedge Fund Agent — desk multi-rôles : données → veille actualités (conflits, sanctions, droits de douane, élections, banques centrales, inflation, récession, énergie, stress bancaire, désescalade) → 8 facteurs macro notés de −2 à +2 et régime (expansion, surchauffe, stagflation, ralentissement, aversion au risque) → stratège (allocation par profil + inclinaisons tactiques expliquées) → moteur de risque déterministe (plafonds crypto / actions, cash minimum, volatilité cible, mode stress, veto si données simulées) → validation humaine et journal. Onglet « Conseils portefeuille » : diagnostic de n'importe quel portefeuille (écarts vs cible, concentration, vulnérabilités aux facteurs, stress tests). Briefing rédigé par IA en option (clé gratuite Groq ou Gemini).
+🦅 Hedge Fund Agent — desk multi-rôles : données → veille actualités (conflits, sanctions, droits de douane, élections, banques centrales, inflation, récession, énergie, stress bancaire, désescalade) → 8 facteurs macro notés de −2 à +2 et régime (expansion, surchauffe, stagflation, ralentissement, aversion au risque) → stratège (allocation par profil + inclinaisons tactiques expliquées) → moteur de risque déterministe (plafonds crypto / actions, cash minimum, volatilité cible, mode stress, veto si données simulées) → validation humaine et journal. Onglet « Conseils portefeuille » : revue de n'importe quel portefeuille menée comme par un gérant professionnel — évolution des facteurs sur 3 mois et changements depuis la dernière revue enregistrée, vues par classe avec niveau de conviction, analyse ligne par ligne (contribution au risque, bêta, tendance, momentum, drawdown → Conserver / Renforcer / Alléger / Surveiller), plan d'ajustement chiffré (bandes de tolérance, plafond par ligne, arbitrages intra-classe, financement par les liquidités, coûts, calendrier d'exécution), déclencheurs de révision et note de gestion téléchargeable (reformulable par l'IA). Briefing rédigé par IA en option (clé gratuite Groq ou Gemini).
 📄 Rapports — PDF complets (auto-portefeuille et portefeuilles existants) et images PNG (thème clair ou sombre, export .zip) : performance, drawdowns, rendements mensuels, allocation, risques, Monte Carlo, signaux ML.
 📈 Optimizer réparé (le fichier contenait une copie de la page Classement) : Max Sharpe, variance min., CVaR min. (programmation linéaire), parité de risque, HRP, équipondéré, frontière efficiente, corrélations.
 Optimiseurs SciPy : plus de dépendance au solveur ECOS (retiré de cvxpy ≥ 1.6).
@@ -89,6 +89,24 @@ api_key  = "votre-cle"       # console.groq.com ou aistudio.google.com
 
 Sans clé, le briefing est rédigé de façon déterministe à partir des données.
 
+Alertes et rapport hebdomadaire automatique
+Onglet 🔔 Alertes : le desk surveille les marchés (mouvements anormaux à la hausse ou à la baisse mesurés en écarts-types, franchissement de la moyenne 200 jours), la volatilité (VIX), les taux (10 ans, inversion de courbe), l'économie (facteurs qui bougent vite, changement de régime), la géopolitique et l'actualité financière, et les portefeuilles suivis (forte variation d'une ligne, concentration, dérive d'allocation). Chaque alerte indique sa gravité (critique / important / info) et explique pourquoi elle compte, son impact probable par classe d'actifs et ce qu'il faut surveiller.
+
+Dans une revue de portefeuille → 📬 Rapport & alertes : générer et télécharger le rapport PNG, se l'envoyer par email, et « Suivre ce portefeuille » pour recevoir le rapport chaque lundi et les alertes par email.
+
+L'envoi automatique tourne gratuitement sur GitHub Actions (.github/workflows/weekly_report.yml), car Streamlit Cloud se met en veille : du lundi au vendredi vers 7 h 45 (heure de Paris) le job calcule les alertes et envoie les nouvelles alertes importantes ; le lundi il envoie aussi le rapport PNG. Dans GitHub → Settings → Secrets and variables → Actions, ajouter :
+
+DATABASE_URL     = la même valeur que [supabase] database_url
+SMTP_HOST        = smtp.gmail.com
+SMTP_PORT        = 587
+SMTP_USER        = votre.adresse@gmail.com
+SMTP_PASSWORD    = mot de passe d'application Gmail
+SMTP_SECURITY    = starttls
+REPORT_TO        = votre.adresse@gmail.com   (rapport du desk si aucun portefeuille n'est suivi)
+TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID       (optionnel : rapport et alertes aussi sur Telegram)
+
+Test : onglet Actions → « MAM — rapport hebdomadaire et alertes » → Run workflow → mode weekly. Les PNG générés sont aussi téléchargeables 30 jours dans l'onglet Actions.
+
 Deploy on Streamlit Cloud
 Push to GitHub
 Go to share.streamlit.io
@@ -97,6 +115,8 @@ Deploy 🚀
 Structure
 eslsca_platform/
 ├── app.py                  # Entry point
+├── jobs/weekly_report.py   # job planifié : alertes quotidiennes + rapport PNG du lundi
+├── .github/workflows/weekly_report.yml   # planification GitHub Actions (gratuit)
 ├── requirements.txt
 ├── data/
 │   ├── assets.csv          # All tradeable assets
@@ -124,6 +144,9 @@ eslsca_platform/
 │   ├── ml_engine.py        # features, modèles ML, validation walk-forward, régimes
 │   ├── auto_portfolio.py   # profils, Black-Litterman, backtest, stress tests, Monte Carlo, ordres
 │   ├── advisor.py          # moteur du Hedge Fund Agent : facteurs, régime, stratège, risque, conseils
+│   ├── portfolio_manager.py # revue de gestion : évolution, vues, analyse des lignes, plan d'ajustement, note
+│   ├── alerts.py           # moteur d'alertes expliquées, historique, abonnements, email / Telegram
+│   ├── report_png.py       # rapport hebdomadaire PNG (matplotlib)
 │   ├── reporting.py        # graphiques PNG (matplotlib) + moteur PDF (ReportLab)
 │   ├── report_builders.py  # contenu des rapports PDF
 │   ├── technical.py        # RSI, MACD, Bollinger, GARCH
