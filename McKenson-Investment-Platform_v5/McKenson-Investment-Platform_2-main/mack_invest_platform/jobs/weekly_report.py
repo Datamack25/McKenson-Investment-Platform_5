@@ -27,6 +27,7 @@ from utils import alerts as AL  # noqa: E402
 from utils import portfolio_manager as PM  # noqa: E402
 from utils.report_png import build_weekly_png  # noqa: E402
 
+FAILURES = []
 SEV_MIN = {"critique": 3, "important": 2, "info": 1}
 
 
@@ -104,6 +105,8 @@ def main():
             subject = (f"🔴 {n_crit} alerte(s) critique(s) — MAM" if n_crit else f"🟠 {len(al)} alerte(s) — MAM")
             err = AL.send_email(email, subject, AL.alerts_email_html(al, "Alertes marchés et portefeuille"))
             log(f"Alertes → {email} : {'OK' if not err else err}")
+            if err:
+                FAILURES.append(err)
             if not err:
                 sent_ids |= set(amap)
         if new_alerts:
@@ -138,6 +141,8 @@ def main():
             err = AL.send_email(email, f"📈 Rapport hebdomadaire MAM — {name} — {datetime.now():%d/%m/%Y}",
                                 body, [(fname, png, "image/png")])
             log(f"Rapport → {email} : {'OK' if not err else err}")
+            if err:
+                FAILURES.append(err)
             err = AL.send_telegram(f"Rapport hebdomadaire MAM — {name} — régime : {macro.regime}", png)
             if err != "Telegram non configuré":
                 log(f"Telegram : {'OK' if not err else err}")
@@ -145,3 +150,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    if FAILURES:
+        log(f"ÉCHEC : {len(FAILURES)} envoi(s) n'ont pas abouti (voir ci-dessus).")
+        sys.exit(1)
