@@ -369,6 +369,7 @@ pages = {
     "📊 Technique":           "technical",
     "🧠 IA Marchés":          "ai_markets",
     "🤖 Auto-Portefeuille":   "auto_portfolio",
+    "🦅 Hedge Fund Agent":    "hedge_fund",
     "📈 Optimizer":           "optimizer",
     "📄 Rapports":            "reports",
     "🏆 Classement":          "leaderboard",
@@ -394,6 +395,8 @@ try:
         from pages import ai_markets; ai_markets.render()
     elif page == "auto_portfolio":
         from pages import auto_portfolio; auto_portfolio.render()
+    elif page == "hedge_fund":
+        from pages import hedge_fund; hedge_fund.render()
     elif page == "optimizer":
         from pages import optimizer; optimizer.render()
     elif page == "reports":
