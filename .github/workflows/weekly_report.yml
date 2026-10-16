@@ -20,13 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Trouver le dossier de l'application
+        run: |
+          F=$(find . -path ./.git -prune -o -path '*/jobs/weekly_report.py' -print | head -1)
+          APP_DIR=$(dirname "$(dirname "$F")")
+          echo "Dossier de l'application : $APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Installer les dépendances
         run: |
+          cd "$APP_DIR"
           pip install -r requirements.txt
           pip install yfinance pandas numpy matplotlib requests psycopg2-binary streamlit
 
@@ -41,13 +48,15 @@ jobs:
           REPORT_TO: ${{ secrets.REPORT_TO }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -m jobs.weekly_report --mode "${{ github.event.inputs.mode || 'auto' }}"
+        run: |
+          cd "$APP_DIR"
+          python -m jobs.weekly_report --mode "${{ github.event.inputs.mode || 'auto' }}"
 
       - name: Conserver les rapports PNG (30 jours)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rapports-${{ github.run_id }}
-          path: reports/*.png
+          path: ${{ env.APP_DIR }}/reports/*.png
           retention-days: 30
           if-no-files-found: ignore
