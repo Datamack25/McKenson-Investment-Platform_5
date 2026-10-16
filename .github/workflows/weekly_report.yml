@@ -1,0 +1,53 @@
+# Rapport hebdomadaire PNG (le lundi) + alertes quotidiennes du Hedge Fund Agent MAM.
+# Gratuit sur GitHub Actions. Les heures « cron » sont en UTC :
+# 05:47 UTC = 07:47 à Paris en été (06:47 en hiver).
+name: MAM — rapport hebdomadaire et alertes
+
+on:
+  schedule:
+    - cron: "47 5 * * 1-5"      # du lundi au vendredi ; le rapport complet part le lundi
+  workflow_dispatch:            # bouton « Run workflow » pour tester à la main
+    inputs:
+      mode:
+        description: "auto, weekly (forcer le rapport) ou alerts"
+        default: "weekly"
+        required: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          pip install -r requirements.txt
+          pip install yfinance pandas numpy matplotlib requests psycopg2-binary streamlit
+
+      - name: Générer et envoyer
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_SECURITY: ${{ secrets.SMTP_SECURITY }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m jobs.weekly_report --mode "${{ github.event.inputs.mode || 'auto' }}"
+
+      - name: Conserver les rapports PNG (30 jours)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-${{ github.run_id }}
+          path: reports/*.png
+          retention-days: 30
+          if-no-files-found: ignore
