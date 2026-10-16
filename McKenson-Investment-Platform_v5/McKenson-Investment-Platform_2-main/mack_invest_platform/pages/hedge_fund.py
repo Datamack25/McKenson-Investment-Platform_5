@@ -6,6 +6,7 @@ Conseils applicables à l'allocation du desk ET à n'importe quel portefeuille e
 from __future__ import annotations
 
 import html
+import json
 from datetime import datetime
 
 import numpy as np
@@ -13,6 +14,8 @@ import pandas as pd
 import streamlit as st
 
 from utils import advisor as A
+from utils import portfolio_manager as PM
+from utils import alerts as AL
 
 try:
     import plotly.graph_objects as go
@@ -44,6 +47,11 @@ _CSS = """
 .hf-news a{color:#cbd5e1;text-decoration:none;font-size:.74rem}
 .hf-news a:hover{color:#00d4ff}
 .hf-news small{color:#475569}
+.hf-alert{border-left:4px solid;padding:10px 14px;margin:8px 0;border-radius:5px;background:rgba(255,255,255,.025)}
+.hf-alert .hd{font-size:.68rem;font-weight:700;letter-spacing:.08em}
+.hf-alert .tt{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem;color:#e2e8f0;margin:2px 0 6px}
+.hf-alert .bd{font-size:.76rem;color:#94a3b8;line-height:1.5}
+.hf-alert .bd b{color:#cbd5e1}
 </style>
 """
 
@@ -51,6 +59,49 @@ ADV_STYLE = {
     "alerte": ("#ff3b6b", "⛔"), "risque": ("#f59e0b", "⚠️"), "action": ("#00d4ff", "🎯"),
     "info": ("#94a3b8", "ℹ️"), "atout": ("#00ff88", "✅"),
 }
+
+
+# ── Clés uniques pour les graphiques (évite les doublons d'ID Streamlit) ─────
+def _pkey() -> str:
+    n = st.session_state.get("_hf_plot_n", 0) + 1
+    st.session_state["_hf_plot_n"] = n
+    return f"hf_plot_{n}"
+
+
+def _reset_pkeys():
+    st.session_state["_hf_plot_n"] = 0
+
+
+
+SEV_COLOR = {"critique": "#ff3b6b", "important": "#f59e0b", "info": "#38bdf8"}
+
+
+def _alert_card(a: dict):
+    c = SEV_COLOR[a["gravite"]]
+    arrow = {"hausse": "▲", "baisse": "▼"}.get(a.get("sens"), "•")
+    st.markdown(
+        f'<div class="hf-alert" style="border-color:{c}">'
+        f'<div class="hd" style="color:{c}">{a["icone"]} {a["gravite_label"].upper()} · '
+        f'{html.escape(a["categorie"])} · {arrow} {html.escape(str(a.get("sens", "")))}'
+        f' <span style="color:#475569;font-weight:400">· {str(a.get("date", ""))[:16].replace("T", " ")}</span></div>'
+        f'<div class="tt">{html.escape(a["titre"])}</div>'
+        f'<div class="bd"><b>Pourquoi c\'est important :</b> {html.escape(a["pourquoi"])}<br>'
+        f'<b>Impact probable :</b> {html.escape(a["impact"])}<br>'
+        f'<b>À surveiller / faire :</b> {html.escape(a["a_surveiller"])}</div></div>',
+        unsafe_allow_html=True)
+
+
+def _live_alerts(ctx, user_reviews: list | None = None) -> list:
+    px, missing, news, news_sim, macro, cov, data_sim = ctx
+    hist = PM.factor_history(px, news)
+    prev = st.session_state.get("_hf_prev_news")
+    if prev is None:
+        prev = AL.get_state("news_intensity") or {}
+        st.session_state["_hf_prev_news"] = prev
+    al = AL.compute_alerts(px, missing, news, news_sim, macro, hist, prev, user_reviews or [])
+    if data_sim:
+        al = [a for a in al if a["regle"] == "actualite"]
+    return al
 
 
 # ── Chargement partagé (cache) ────────────────────────────────────────────────
@@ -76,7 +127,7 @@ def _bar_h(series: pd.Series, title: str, fmt: str = "+.2f", rng=None):
         fig.update_layout(title=title, height=40 + 34 * len(s), margin=dict(l=10, r=30, t=40, b=10),
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           font=dict(color="#cbd5e1", size=11), xaxis=dict(range=rng, gridcolor="#1e293b"))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=_pkey())
     else:
         st.caption(title)
         st.bar_chart(s)
@@ -92,7 +143,7 @@ def _alloc_compare(df: pd.DataFrame, cols: list[str], title: str):
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           font=dict(color="#cbd5e1", size=11), legend=dict(orientation="h", y=-0.3),
                           margin=dict(l=10, r=10, t=40, b=10), yaxis=dict(gridcolor="#1e293b"))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=_pkey())
     else:
         st.bar_chart(df[cols])
 
@@ -167,54 +218,261 @@ def _user_portfolios() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Panneau de conseils réutilisable (aussi appelable depuis Auto-Portefeuille)
+# Revue de gestion réutilisable (aussi appelable depuis Auto-Portefeuille)
 # ══════════════════════════════════════════════════════════════════════════════
+def _fmt_money(v):
+    return f"{v:,.0f}".replace(",", " ")
+
+
 def render_advice_panel(holdings: dict, profile: str = "Équilibré", key: str = "adv",
-                        ctx=None):
-    """holdings = {ticker: valeur en € ou $ (ou poids)}.
-    Exemple depuis pages/auto_portfolio.py :
+                        ctx=None, name: str = "Portefeuille"):
+    """Revue complète d'un portefeuille, comme un gérant professionnel.
+    holdings = {ticker: valeur}. Exemple depuis pages/auto_portfolio.py :
         from pages.hedge_fund import render_advice_panel
-        render_advice_panel({t: w for t, w in weights.items()}, profile="Dynamique")
+        render_advice_panel({t: w * capital for t, w in weights.items()},
+                            profile="Dynamique", name="Auto-portefeuille")
     """
     st.markdown(_CSS, unsafe_allow_html=True)
-    px, missing, news, news_sim, macro, cov, data_sim = ctx or _load_all()
-    target_raw = A.propose_allocation(macro.factors, profile)["Proposée (avant risque)"]
-    target, _, _ = A.risk_engine(target_raw, profile, macro.factors, cov, data_sim)
-    res = A.advise_portfolio(holdings, macro, profile, target, cov)
+    if ctx is None:          # appel autonome (ex. depuis Auto-Portefeuille)
+        _reset_pkeys()
+        ctx = _load_all()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Volatilité estimée", f"{res['vol']:.1%}", help="Annualisée, via les proxies de classes")
-    c2.metric("Pire scénario de stress", f"{res['stress'].iloc[0]:+.1%}", res["stress"].index[0],
-              delta_color="off")
-    c3.metric("Régime actuel", macro.regime)
+    with st.expander("⚙️ Règles de gestion", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        band = c1.slider("Bande de tolérance par classe", 0.01, 0.10, 0.03, 0.01, key=f"{key}_band",
+                         help="Pas d'ordre tant que l'écart à la cible reste dans cette bande")
+        mode = c2.radio("Rééquilibrage", ["Complet", "Moitié du chemin"], key=f"{key}_mode",
+                        help="« Moitié du chemin » limite la rotation quand la conviction est incertaine")
+        max_line = c3.slider("Poids maximum par ligne", 0.05, 0.30, 0.15, 0.01, key=f"{key}_maxl")
 
-    st.markdown("##### Conseils du desk")
-    if not res["advice"]:
-        st.success("Portefeuille cohérent avec le contexte et le profil choisi : aucun ajustement majeur.")
-    for lvl, title, detail in res["advice"]:
-        color, ico = ADV_STYLE[lvl]
-        st.markdown(f'<div class="hf-adv" style="border-color:{color}"><b>{ico} {html.escape(title)}</b>'
-                    f'<span>{html.escape(detail)}</span></div>', unsafe_allow_html=True)
+    journal, _ = A.load_journal()
+    with st.spinner("Le gérant analyse le portefeuille…"):
+        R = PM.full_review(name, holdings, profile, ctx, journal, band=band,
+                           mode="Complet" if mode == "Complet" else "Moitié", max_line=max_line)
+    lines, plan, views, macro = R["lines"], R["plan"], R["views"], R["macro"]
 
-    cmp = pd.DataFrame({"Actuel": res["class_weights"], "Cible du desk": target})
-    cmp = cmp[(cmp > 0.004).any(axis=1)]
-    _alloc_compare(cmp, ["Actuel", "Cible du desk"], "Répartition actuelle vs cible")
+    m = st.columns(5)
+    m[0].metric("Valeur", _fmt_money(plan["total"]))
+    m[1].metric("Volatilité", f"{R['vol_now']:.1%}", f"{R['vol_after'] - R['vol_now']:+.1%} après ajustement",
+                delta_color="inverse")
+    m[2].metric("Pire stress", f"{R['stress'].iloc[0]:+.1%}",
+                f"{R['stress_after'].iloc[0] - R['stress'].iloc[0]:+.1%} après ajustement")
+    m[3].metric("Rotation proposée", f"{plan['turnover']:.0%}", f"coûts ≈ {_fmt_money(plan['cost'])}",
+                delta_color="off")
+    m[4].metric("Régime", macro.regime)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        _bar_h(res["stress"] * 100, "Stress tests (perte/gain estimés, %)", fmt="+.1f")
-    with col_b:
-        _bar_h(res["factor_exposure"].rename(lambda k: A.FACTORS[k][0]),
-               "Sensibilité du portefeuille aux facteurs")
-    st.caption("Stress tests : chocs approximatifs par classe d'actifs (hyp. = scénario hypothétique). "
-               + DISCLAIMER)
-    return res
+    if R["since"]:
+        st.warning("**Depuis votre dernière revue** ("
+                   + str(R["last_review"].get("date", ""))[:10] + ") : " + " ; ".join(R["since"]))
+    if R["line_missing"]:
+        st.caption("Cours indisponibles pour " + ", ".join(R["line_missing"])
+                   + " : analysés via l'ETF représentatif de leur classe.")
+
+    s1, s2, s3, s4, s5, s6 = st.tabs(["📝 Note de gestion", "🔁 Plan d'ajustement", "🔍 Analyse des lignes",
+                                      "📈 Évolution du contexte", "⚠️ Risques & déclencheurs",
+                                      "📬 Rapport & alertes"])
+
+    with s1:
+        note = st.session_state.get(f"{key}_llm_note") or R["note"]
+        st.markdown(note)
+        b1, b2, b3 = st.columns(3)
+        if A.llm_available() and b1.button("✍️ Reformuler par l'IA", key=f"{key}_llm"):
+            try:
+                with st.spinner("Rédaction…"):
+                    st.session_state[f"{key}_llm_note"] = PM.llm_rewrite_note(R["note"])
+                st.rerun()
+            except Exception as e:
+                st.warning(f"LLM indisponible : {e}")
+        b2.download_button("⬇️ Note (Markdown)", note.encode("utf-8"),
+                           f"note_gestion_{datetime.now():%Y%m%d}.md", "text/markdown", key=f"{key}_dl")
+        if b3.button("💾 Enregistrer la revue", key=f"{key}_save"):
+            t = plan["trades"]
+            msg = A.append_journal(dict(
+                type="revue", decision="revue", portefeuille=name, profil=profile,
+                date=datetime.now().isoformat(timespec="seconds"), regime=macro.regime,
+                capital=round(plan["total"], 2), donnees_simulees=R["data_sim"],
+                facteurs={k: round(v, 2) for k, v in macro.factors.items()},
+                allocation={c: round(float(w), 4) for c, w in
+                            lines.groupby("Classe")["Poids"].sum().items()},
+                ordres=[] if t.empty else t[["Ordre", "Ligne", "Montant"]].round(2).to_dict("records"),
+                commentaire=f"Rotation {plan['turnover']:.0%}"))
+            st.success("Revue enregistrée : la prochaine revue signalera ce qui a changé depuis.")
+            if msg:
+                st.warning(msg)
+
+    with s2:
+        t = plan["trades"]
+        if t.empty:
+            st.success(plan["timing"])
+        else:
+            st.markdown(f"**Calendrier d'exécution** — {plan['timing']}")
+            show = t[["Priorité", "Ordre", "Ligne", "Classe", "Montant", "% du portefeuille",
+                      "Conviction", "Motif"]].copy()
+            st.dataframe(show.style.format({"Montant": lambda v: f"{v:+,.0f}".replace(",", " "),
+                                            "% du portefeuille": "{:+.1%}"}),
+                         use_container_width=True, hide_index=True)
+            st.download_button("⬇️ Ordres (CSV)", show.to_csv(index=False).encode("utf-8"),
+                               f"ordres_{datetime.now():%Y%m%d}.csv", "text/csv", key=f"{key}_csv")
+        cmp = pd.DataFrame({"Actuel": lines.groupby("Classe")["Poids"].sum().reindex(A.CLASSES).fillna(0),
+                            "Après ajustement": plan["after"].clip(lower=0),
+                            "Cible du gérant": R["target"]})
+        cmp = cmp[(cmp > 0.004).any(axis=1)]
+        _alloc_compare(cmp, ["Actuel", "Après ajustement", "Cible du gérant"], "Allocation par classe")
+        st.markdown("##### Vues du gérant")
+        v = views[["Vue", "Conviction", "Poids stratégique", "Poids cible", "Cohérence des signaux", "Arguments"]]
+        st.dataframe(v.style.format({"Poids stratégique": "{:.0%}", "Poids cible": "{:.0%}",
+                                     "Cohérence des signaux": "{:.0%}"}), use_container_width=True)
+
+    with s3:
+        cols = ["Classe", "Poids", "Valeur", "Avis", "Motif", "Contribution au risque", "Volatilité",
+                "Bêta", "Perf. 1 mois", "Perf. 3 mois", "Perf. 12 mois", "Drawdown", "Tendance", "Source"]
+        pct = ["Poids", "Contribution au risque", "Volatilité", "Perf. 1 mois", "Perf. 3 mois",
+               "Perf. 12 mois", "Drawdown"]
+        st.dataframe(lines[cols].style.format({c: "{:.1%}" for c in pct} |
+                                              {"Valeur": lambda v: _fmt_money(v), "Bêta": "{:.2f}"},
+                                              na_rep="n.d."),
+                     use_container_width=True)
+        rc = lines[lines["Contribution au risque"] > 0]
+        if len(rc) and _PLOTLY:
+            fig = go.Figure()
+            fig.add_bar(name="Poids", x=rc.index, y=rc["Poids"] * 100, marker_color=GREY)
+            fig.add_bar(name="Contribution au risque", x=rc.index, y=rc["Contribution au risque"] * 100,
+                        marker_color=RED)
+            fig.update_layout(title="Poids vs contribution au risque (%)", barmode="group", height=320,
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font=dict(color="#cbd5e1", size=11), legend=dict(orientation="h", y=-0.3),
+                              margin=dict(l=10, r=10, t=40, b=10), yaxis=dict(gridcolor="#1e293b"))
+            st.plotly_chart(fig, use_container_width=True, key=_pkey())
+        st.caption("Une ligne dont la contribution au risque dépasse nettement son poids concentre le risque "
+                   "du portefeuille : c'est la première candidate à un allègement.")
+
+    with s4:
+        _render_factor_history(R["hist"], R["moves"])
+
+    with s5:
+        c1, c2 = st.columns(2)
+        with c1:
+            stx = pd.DataFrame({"Actuel": R["stress"] * 100,
+                                "Après ajustement": R["stress_after"].reindex(R["stress"].index) * 100})
+            if _PLOTLY:
+                fig = go.Figure()
+                fig.add_bar(name="Actuel", y=stx.index, x=stx["Actuel"], orientation="h", marker_color=RED)
+                fig.add_bar(name="Après ajustement", y=stx.index, x=stx["Après ajustement"],
+                            orientation="h", marker_color=CYAN)
+                fig.update_layout(title="Stress tests (%)", barmode="group", height=340,
+                                  paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font=dict(color="#cbd5e1", size=11), legend=dict(orientation="h", y=-0.2),
+                                  margin=dict(l=10, r=10, t=40, b=10), xaxis=dict(gridcolor="#1e293b"))
+                st.plotly_chart(fig, use_container_width=True, key=_pkey())
+            else:
+                st.bar_chart(stx)
+        with c2:
+            cls_now = lines.groupby("Classe")["Poids"].sum().reindex(A.CLASSES).fillna(0)
+            _bar_h(A.SENSITIVITY.T.dot(cls_now).rename(lambda k: A.FACTORS[k][0]),
+                   "Sensibilité du portefeuille aux facteurs")
+        st.markdown("##### Déclencheurs de révision")
+        for x in R["triggers"]:
+            st.markdown(f"- {x}")
+
+    with s6:
+        _render_report_section(R, holdings, profile, name, key, ctx)
+    st.caption("Stress tests : chocs approximatifs par classe (hyp. = hypothétique). " + DISCLAIMER)
+    return R
+
+
+
+def _render_report_section(R: dict, holdings: dict, profile: str, name: str, key: str, ctx):
+    px, missing, news, news_sim, macro, cov, data_sim = ctx
+    my_alerts = _live_alerts(ctx, [(name, R["lines"], R["target"])])
+    my_alerts = [a for a in my_alerts if a["categorie"] != "Portefeuille" or a["titre"].startswith(name + " ·")]
+
+    st.markdown("##### Rapport PNG")
+    c1, c2 = st.columns([1, 1])
+    if c1.button("🖼️ Générer le rapport", key=f"{key}_png"):
+        from utils.report_png import build_weekly_png
+        with st.spinner("Mise en page du rapport…"):
+            st.session_state[f"{key}_png_bytes"] = build_weekly_png(
+                macro, news, my_alerts, R, name=name, profile=profile, hist=R["hist"], data_sim=data_sim)
+    png = st.session_state.get(f"{key}_png_bytes")
+    if png:
+        c2.download_button("⬇️ Télécharger le PNG", png, f"rapport_{datetime.now():%Y%m%d}.png",
+                           "image/png", key=f"{key}_pngdl")
+        st.image(png, use_container_width=True)
+        default_mail = A.current_user_key() if "@" in A.current_user_key() else ""
+        to = st.text_input("Envoyer maintenant à", value=default_mail, key=f"{key}_to")
+        if st.button("📧 Envoyer par email", key=f"{key}_send") and to:
+            err = AL.send_email(to, f"📈 Rapport MAM — {name} — {datetime.now():%d/%m/%Y}",
+                                AL.alerts_email_html(my_alerts[:6], f"Rapport — {name} · régime : {macro.regime}"),
+                                [(f"rapport_{datetime.now():%Y%m%d}.png", png, "image/png")])
+            st.success("Rapport envoyé.") if not err else st.error(f"Envoi impossible : {err}")
+
+    st.markdown("##### Rapport hebdomadaire automatique et alertes par email")
+    if A.journal_backend() != "Supabase":
+        st.info("L'abonnement nécessite la base Supabase (section [supabase] des secrets).")
+        return
+    user = A.current_user_key()
+    subs = {s["portfolio_name"]: s for s in AL.subscriptions(user)}
+    cur = subs.get(name)
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    email = c1.text_input("Adresse de réception", value=(cur or {}).get("email") or
+                          (user if "@" in user else ""), key=f"{key}_subemail")
+    weekly = c2.checkbox("Rapport du lundi", value=(cur or {}).get("weekly", True), key=f"{key}_w")
+    alerts_on = c3.checkbox("Alertes", value=(cur or {}).get("alerts", True), key=f"{key}_a")
+    sev = c4.selectbox("Gravité minimum", ["critique", "important", "info"],
+                       index=["critique", "important", "info"].index((cur or {}).get("min_severity", "important")),
+                       key=f"{key}_sev")
+    b1, b2 = st.columns(2)
+    if b1.button("📬 " + ("Mettre à jour le suivi" if cur else "Suivre ce portefeuille"), key=f"{key}_sub"):
+        if not email or "@" not in email:
+            st.error("Adresse email invalide.")
+        elif AL.subscribe(user, email, name, profile, holdings, weekly, alerts_on, sev):
+            st.success(f"C'est noté : {name} sera analysé automatiquement"
+                       + (" et le rapport PNG vous sera envoyé chaque lundi" if weekly else "")
+                       + (f" ; alertes « {sev} » et plus graves par email" if alerts_on else "") + ".")
+        else:
+            st.error("Enregistrement impossible : base injoignable.")
+    if cur and b2.button("🛑 Arrêter le suivi", key=f"{key}_unsub"):
+        AL.unsubscribe(user, name)
+        st.info("Suivi arrêté.")
+    st.caption("Le suivi enregistre une copie des lignes actuelles : cliquez à nouveau sur « Mettre à jour » "
+               "après avoir modifié le portefeuille. L'envoi automatique est assuré par GitHub Actions (voir README).")
+
+
+def _render_factor_history(hist: pd.DataFrame, moves: list):
+    if hist.empty:
+        st.info("Historique insuffisant pour mesurer l'évolution des facteurs.")
+        return
+    num = hist.drop(index="Régime").astype(float)
+    num.index = [A.FACTORS[k][0] for k in num.index]
+    if _PLOTLY:
+        fig = go.Figure()
+        pal = [CYAN, GREEN, RED, VIOLET, "#f59e0b", "#e879f9", "#38bdf8", "#a3e635"]
+        for i, (f, row) in enumerate(num.iterrows()):
+            fig.add_scatter(x=list(row.index), y=row.values, mode="lines+markers", name=f,
+                            line=dict(color=pal[i % len(pal)], width=2))
+        fig.update_layout(title="Évolution des facteurs (−2 à +2)", height=380,
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font=dict(color="#cbd5e1", size=11), legend=dict(orientation="h", y=-0.25),
+                          margin=dict(l=10, r=10, t=40, b=10), yaxis=dict(range=[-2.2, 2.2], gridcolor="#1e293b"))
+        st.plotly_chart(fig, use_container_width=True, key=_pkey())
+    else:
+        st.line_chart(num.T)
+    reg = hist.loc["Régime"]
+    st.markdown("**Régime** : " + " → ".join(f"{c} : *{r}*" for c, r in reg.items()))
+    st.markdown("##### Ce qui a bougé sur le dernier mois")
+    if not moves:
+        st.markdown("Aucun facteur n'a varié significativement : contexte stable.")
+    for mv in moves:
+        st.markdown(f"- {PM.describe_move(mv)}")
+    st.caption("L'évolution est calculée sur les données de marché ; les actualités ne sont disponibles "
+               "qu'à date et sont tenues constantes dans l'historique.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Page
 # ══════════════════════════════════════════════════════════════════════════════
 def render():
+    _reset_pkeys()
     st.markdown(_CSS, unsafe_allow_html=True)
     st.markdown(
         '<div class="hf-card"><div class="hf-title">🦅 HEDGE FUND AGENT</div>'
@@ -243,7 +501,50 @@ def render():
     if missing and not data_sim:
         st.caption("Indicateurs indisponibles remplacés par du simulé : " + ", ".join(missing))
 
-    t1, t2, t3, t4 = st.tabs(["🛰️ BRIEFING", "🎯 ALLOCATION DU DESK", "🩺 CONSEILS PORTEFEUILLE", "📒 JOURNAL"])
+    live_alerts = _live_alerts(ctx)
+    n_hot = sum(a["rang"] >= 2 for a in live_alerts)
+    crit = [a for a in live_alerts if a["gravite"] == "critique"]
+    if crit:
+        st.error(f"🔴 {len(crit)} alerte(s) critique(s) : " + " · ".join(a["titre"] for a in crit[:3])
+                 + " — détails dans l'onglet Alertes.")
+
+    t1, t5, t2, t3, t4 = st.tabs(["🛰️ BRIEFING", f"🔔 ALERTES ({n_hot})", "🎯 ALLOCATION DU DESK",
+                                  "🩺 CONSEILS PORTEFEUILLE", "📒 JOURNAL"])
+
+    # ── Alertes ───────────────────────────────────────────────────────────────
+    with t5:
+        st.markdown("Le desk surveille en continu les **marchés** (mouvements anormaux à la hausse ou à la "
+                    "baisse, tendances), la **volatilité**, les **taux**, l'**économie** (facteurs, régime), la "
+                    "**géopolitique** et l'**actualité financière**, et vos **portefeuilles suivis**. Chaque "
+                    "alerte explique pourquoi elle compte et ce qu'il faut surveiller.")
+        f1, f2 = st.columns(2)
+        sev_f = f1.multiselect("Gravité", ["critique", "important", "info"],
+                               default=["critique", "important", "info"], key="hf_al_sev")
+        cats = sorted({a["categorie"] for a in live_alerts}) or ["Marchés"]
+        cat_f = f2.multiselect("Catégorie", cats, default=cats, key="hf_al_cat")
+        # alertes des portefeuilles suivis
+        port_al = []
+        if A.journal_backend() == "Supabase":
+            for sub in AL.subscriptions(A.current_user_key()):
+                try:
+                    Rv = PM.full_review(sub["portfolio_name"], sub["holdings"], sub["profile"] or "Équilibré", ctx, [])
+                    port_al += AL.portfolio_alerts(sub["portfolio_name"], Rv["lines"], Rv["target"])
+                except Exception:
+                    pass
+        shown = [a for a in live_alerts + port_al if a["gravite"] in sev_f and
+                 (a["categorie"] in cat_f or a["categorie"] == "Portefeuille")]
+        shown.sort(key=lambda a: -a["rang"])
+        if not shown:
+            st.success("Aucune alerte pour ces filtres : pas d'évolution qui mérite votre attention aujourd'hui.")
+        for a in shown:
+            _alert_card(a)
+        if data_sim:
+            st.caption("Données de marché simulées : seules les alertes d'actualité sont affichées.")
+        hist_al = AL.alert_history(30) if A.journal_backend() == "Supabase" else []
+        if hist_al:
+            with st.expander(f"📜 Historique des alertes (30 jours) — {len(hist_al)}"):
+                st.dataframe(pd.DataFrame(hist_al)[["date", "gravite_label", "categorie", "sens", "titre"]],
+                             use_container_width=True, hide_index=True)
 
     # ── 1. Briefing ───────────────────────────────────────────────────────────
     with t1:
@@ -275,6 +576,10 @@ def render():
                            "Gemini dans les secrets Streamlit (section [llm]).")
             sc = A.class_scores(macro.factors)
             _bar_h(sc, "Classes d'actifs favorisées / pénalisées par le contexte")
+
+        with st.expander("📈 Évolution des facteurs sur 3 mois", expanded=False):
+            hist = PM.factor_history(px, news)
+            _render_factor_history(hist, PM.factor_moves(hist))
 
         st.markdown("##### Veille actualités (7 derniers jours)")
         themes = sorted(news.items(), key=lambda kv: -kv[1]["intensity"])
@@ -344,12 +649,16 @@ def render():
                      allocation={c: round(float(w), 4) for c, w in final.items() if w > 0.0005},
                      donnees_simulees=data_sim, commentaire=note)
         if b1.button("✅ Valider la proposition", key="hf_ok"):
-            A.append_journal(entry | dict(decision="validée"))
+            msg = A.append_journal(entry | dict(decision="validée"))
             st.success("Proposition validée et inscrite au journal."
                        + ("" if allowed else " Exécution bloquée : données simulées."))
+            if msg:
+                st.warning(msg)
         if b2.button("❌ Rejeter", key="hf_ko"):
-            A.append_journal(entry | dict(decision="rejetée"))
+            msg = A.append_journal(entry | dict(decision="rejetée"))
             st.info("Proposition rejetée et inscrite au journal.")
+            if msg:
+                st.warning(msg)
         orders = pd.DataFrame({"Classe": final.index, "Proxy": [A.CLASS_PROXY[c] for c in final.index],
                                "Poids": final.round(4).values, "Montant": (final * capital).round(2).values})
         b3.download_button("⬇️ Ordres (CSV)", orders.to_csv(index=False).encode("utf-8"),
@@ -359,8 +668,10 @@ def render():
 
     # ── 3. Conseils pour un portefeuille existant ─────────────────────────────
     with t3:
-        st.markdown("Diagnostic de **n'importe quel portefeuille** au regard de la situation économique, "
-                    "politique, géopolitique et financière actuelle.")
+        st.markdown("Revue de **n'importe quel portefeuille**, menée comme par un gérant professionnel : "
+                    "évolution du contexte économique, politique et géopolitique, vues par classe avec "
+                    "niveau de conviction, analyse ligne par ligne, plan d'ajustement chiffré et "
+                    "déclencheurs de révision.")
         found = _user_portfolios()
         options = list(found) + ["✏️ Saisie manuelle"]
         c1, c2 = st.columns([2, 1])
@@ -381,19 +692,31 @@ def render():
             st.dataframe(pd.DataFrame({"Valeur": holdings}).sort_values("Valeur", ascending=False)
                          .style.format("{:,.0f}"), use_container_width=True)
         if holdings:
-            render_advice_panel(holdings, prof2, key="hf_t3", ctx=ctx)
+            render_advice_panel(holdings, prof2, key="hf_t3", ctx=ctx,
+                                name=src if src != "✏️ Saisie manuelle" else "Portefeuille saisi")
 
     # ── 4. Journal ────────────────────────────────────────────────────────────
     with t4:
-        j = A.load_journal()
+        j, err = A.load_journal()
+        st.caption(f"Stockage : **{A.journal_backend()}** · compte : {A.current_user_key()}")
+        if err:
+            st.warning(err)
         if not j:
             st.info("Le journal est vide. Chaque proposition validée ou rejetée y est enregistrée.")
         else:
-            df = pd.DataFrame(j)[["date", "decision", "profil", "regime", "capital",
-                                  "donnees_simulees", "commentaire"]].iloc[::-1]
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            df = pd.DataFrame(j)
+            cols = [c for c in ["date", "decision", "portefeuille", "profil", "regime", "intensite", "capital",
+                                "donnees_simulees", "commentaire"] if c in df.columns]
+            st.dataframe(df[cols].iloc[::-1], use_container_width=True, hide_index=True)
+            pick = st.selectbox("Détail d'une décision", range(len(j)), format_func=lambda i:
+                                f"{j[i].get('date', '')} · {j[i].get('decision', '')} · {j[i].get('profil', '')}",
+                                index=len(j) - 1, key="hf_jpick")
+            alloc = pd.Series(j[pick].get("allocation", {}), dtype=float)
+            if not alloc.empty:
+                _pct_table(alloc.rename("Poids").to_frame(), ["Poids"])
             st.download_button("⬇️ Exporter le journal (JSON)",
-                               pd.Series(j).to_json(orient="values", force_ascii=False).encode("utf-8"),
+                               json.dumps(j, ensure_ascii=False, indent=1, default=str).encode("utf-8"),
                                "journal_hedge_fund.json", "application/json", key="hf_jdl")
-        st.caption("Sur Streamlit Cloud, ce fichier est effacé au redémarrage : exportez-le, "
-                   "ou je peux le brancher sur votre base Supabase.")
+        if A.journal_backend() != "Supabase":
+            st.caption("Supabase non configuré : le fichier local est effacé au redémarrage de "
+                       "Streamlit Cloud. Ajoutez la section [supabase] aux secrets.")
