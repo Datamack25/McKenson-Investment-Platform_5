@@ -482,11 +482,39 @@ def _cfg(section: str, key: str, env: str, default=None):
         return default
 
 
+def _clean(v):
+    """Nettoie une valeur de secret : espaces, guillemets copiés par erreur, retours à la ligne."""
+    if v is None:
+        return None
+    return str(v).strip().strip('"').strip("'").strip()
+
+
 def smtp_config() -> dict | None:
-    c = dict(host=_cfg("email", "smtp_host", "SMTP_HOST"), port=int(_cfg("email", "smtp_port", "SMTP_PORT", 587)),
-             user=_cfg("email", "smtp_user", "SMTP_USER"), password=_cfg("email", "smtp_password", "SMTP_PASSWORD"),
-             security=_cfg("email", "security", "SMTP_SECURITY", "starttls"))
+    host = _clean(_cfg("email", "smtp_host", "SMTP_HOST"))
+    user = _clean(_cfg("email", "smtp_user", "SMTP_USER"))
+    pwd = _clean(_cfg("email", "smtp_password", "SMTP_PASSWORD"))
+    sec = (_clean(_cfg("email", "security", "SMTP_SECURITY", "starttls")) or "starttls").lower()
+    try:
+        port = int(_clean(_cfg("email", "smtp_port", "SMTP_PORT", 587)) or 587)
+    except ValueError:
+        port = 587
+    if host and "gmail" in host.lower() and pwd:
+        pwd = pwd.replace(" ", "")          # mot de passe d'application Gmail : espaces à retirer
+    c = dict(host=host, port=port, user=user, password=pwd, security=sec)
     return c if c["host"] and c["user"] and c["password"] else None
+
+
+def _smtp_attempts(cfg: dict) -> list:
+    """Méthodes à essayer, dans l'ordre : la configuration déclarée, puis les deux
+    méthodes standard (STARTTLS sur 587, SSL sur 465)."""
+    first = ("ssl" if cfg["security"] == "ssl" or cfg["port"] == 465 else
+             "none" if cfg["security"] == "none" else "starttls", cfg["port"])
+    tries = [first, ("starttls", 587), ("ssl", 465)]
+    out = []
+    for t in tries:
+        if t not in out:
+            out.append(t)
+    return out
 
 
 def send_email(to: str, subject: str, html_body: str, attachments: list | None = None) -> str | None:
@@ -497,6 +525,7 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
     cfg = smtp_config()
     if not cfg:
         return "SMTP non configuré"
+    to = _clean(to)
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = subject, f"MAM Hedge Fund Agent <{cfg['user']}>", to
     msg.set_content("Ce message est au format HTML.")
@@ -504,23 +533,33 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
     for fname, data, mime in attachments or []:
         maintype, subtype = mime.split("/")
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=fname)
-    try:
-        ctx = ssl.create_default_context()
-        if cfg["security"] == "ssl":
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=ctx, timeout=30) as s:
-                s.login(cfg["user"], cfg["password"])
-                s.send_message(msg)
-        else:
-            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as s:
-                if cfg["security"] == "starttls":
-                    s.starttls(context=ctx)
+
+    errors = []
+    for mode, port in _smtp_attempts(cfg):
+        try:
+            ctx = ssl.create_default_context()
+            if mode == "ssl":
+                with smtplib.SMTP_SSL(cfg["host"], port, context=ctx, timeout=40) as s:
                     s.ehlo()
-                if s.has_extn("auth"):
                     s.login(cfg["user"], cfg["password"])
-                s.send_message(msg)
-        return None
-    except Exception as e:
-        return f"{e.__class__.__name__}: {e}"
+                    s.send_message(msg)
+            else:
+                with smtplib.SMTP(cfg["host"], port, timeout=40) as s:
+                    s.ehlo()
+                    if mode == "starttls":
+                        s.starttls(context=ctx)
+                        s.ehlo()
+                    if s.has_extn("auth"):
+                        s.login(cfg["user"], cfg["password"])
+                    s.send_message(msg)
+            return None
+        except smtplib.SMTPAuthenticationError as e:
+            # identifiants refusés : inutile d'essayer un autre port
+            return ("Identifiants refusés par le serveur (SMTP_USER / SMTP_PASSWORD). Pour Gmail, il faut un "
+                    f"mot de passe d'application de 16 lettres. Détail : {e.smtp_code} {e.smtp_error!r}")
+        except Exception as e:
+            errors.append(f"{mode}:{port} → {e.__class__.__name__}: {e}")
+    return " | ".join(errors)
 
 
 def send_telegram(text: str, png: bytes | None = None) -> str | None:
