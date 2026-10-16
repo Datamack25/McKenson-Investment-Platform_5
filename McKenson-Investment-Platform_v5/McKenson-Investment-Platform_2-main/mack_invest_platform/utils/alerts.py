@@ -536,21 +536,29 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
 
     errors = []
     for mode, port in _smtp_attempts(cfg):
+        stage = "connexion"
         try:
             ctx = ssl.create_default_context()
             if mode == "ssl":
                 with smtplib.SMTP_SSL(cfg["host"], port, context=ctx, timeout=40) as s:
+                    stage = "présentation (EHLO)"
                     s.ehlo()
+                    stage = "authentification (login)"
                     s.login(cfg["user"], cfg["password"])
+                    stage = "envoi du message"
                     s.send_message(msg)
             else:
                 with smtplib.SMTP(cfg["host"], port, timeout=40) as s:
+                    stage = "présentation (EHLO)"
                     s.ehlo()
                     if mode == "starttls":
+                        stage = "chiffrement (STARTTLS)"
                         s.starttls(context=ctx)
                         s.ehlo()
                     if s.has_extn("auth"):
+                        stage = "authentification (login)"
                         s.login(cfg["user"], cfg["password"])
+                    stage = "envoi du message"
                     s.send_message(msg)
             return None
         except smtplib.SMTPAuthenticationError as e:
@@ -558,8 +566,37 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
             return ("Identifiants refusés par le serveur (SMTP_USER / SMTP_PASSWORD). Pour Gmail, il faut un "
                     f"mot de passe d'application de 16 lettres. Détail : {e.smtp_code} {e.smtp_error!r}")
         except Exception as e:
-            errors.append(f"{mode}:{port} → {e.__class__.__name__}: {e}")
+            label = "STARTTLS-587" if (mode, port) == ("starttls", 587) else f"{mode.upper()}-{port}"
+            errors.append(f"[{label}] coupé à l'étape « {stage} » → {e.__class__.__name__}: {e}")
     return " | ".join(errors)
+
+
+def smtp_diagnostic() -> list:
+    """Vérifications des réglages SMTP SANS afficher les valeurs secrètes."""
+    host = _clean(_cfg("email", "smtp_host", "SMTP_HOST"))
+    user = _clean(_cfg("email", "smtp_user", "SMTP_USER"))
+    pwd = _clean(_cfg("email", "smtp_password", "SMTP_PASSWORD"))
+    sec = _clean(_cfg("email", "security", "SMTP_SECURITY", "starttls"))
+    port = _clean(_cfg("email", "smtp_port", "SMTP_PORT", 587))
+    to = _clean(os.environ.get("REPORT_TO"))
+    raw_pwd = _cfg("email", "smtp_password", "SMTP_PASSWORD") or ""
+    p = (pwd or "").replace(" ", "")
+    ok = lambda b: "OK " if b else "PROBLÈME"
+    out = [
+        f"{ok(bool(host))} SMTP_HOST renseigné",
+        f"{ok((host or '').lower() == 'smtp.gmail.com')} SMTP_HOST vaut exactement « smtp.gmail.com » "
+        f"(longueur lue : {len(host or '')} caractères, attendu 14)",
+        f"{ok(str(port) in ('587', '465'))} SMTP_PORT vaut 587 ou 465",
+        f"{ok((sec or '').lower() in ('starttls', 'ssl'))} SMTP_SECURITY vaut starttls ou ssl",
+        f"{ok('@' in (user or ''))} SMTP_USER contient un @",
+        f"{ok((user or '').lower().endswith(('@gmail.com', '@googlemail.com')))} SMTP_USER est une adresse Gmail",
+        f"{ok(user == (user or '').strip())} SMTP_USER sans espace parasite",
+        f"{ok(len(p) == 16)} SMTP_PASSWORD fait 16 caractères hors espaces (lu : {len(p)})",
+        f"{ok(p.isalpha() and p.islower())} SMTP_PASSWORD ne contient que des lettres minuscules",
+        f"{ok(raw_pwd == raw_pwd.strip())} SMTP_PASSWORD sans espace ni retour à la ligne au début/à la fin",
+        f"{ok(bool(to) and '@' in (to or ''))} REPORT_TO contient une adresse email",
+    ]
+    return out
 
 
 def send_telegram(text: str, png: bytes | None = None) -> str | None:
