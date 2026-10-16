@@ -94,18 +94,40 @@ Onglet 🔔 Alertes : le desk surveille les marchés (mouvements anormaux à la 
 
 Dans une revue de portefeuille → 📬 Rapport & alertes : générer et télécharger le rapport PNG, se l'envoyer par email, et « Suivre ce portefeuille » pour recevoir le rapport chaque lundi et les alertes par email.
 
-L'envoi automatique tourne gratuitement sur GitHub Actions (.github/workflows/weekly_report.yml), car Streamlit Cloud se met en veille : du lundi au vendredi vers 7 h 45 (heure de Paris) le job calcule les alertes et envoie les nouvelles alertes importantes ; le lundi il envoie aussi le rapport PNG. Dans GitHub → Settings → Secrets and variables → Actions, ajouter :
+Envoi automatique (GitHub Actions, gratuit)
+Streamlit Cloud se met en veille : il ne peut rien envoyer seul. L'envoi est donc assuré par GitHub Actions (.github/workflows/weekly_report.yml) :
+- du lundi au vendredi vers 7 h 45 (heure de Paris ; 6 h 45 en hiver) : calcul des alertes et envoi des nouvelles alertes importantes ou critiques ;
+- chaque lundi : envoi du rapport hebdomadaire PNG en pièce jointe, pour chaque portefeuille suivi (ou rapport du « Desk MAM » si aucun portefeuille n'est suivi).
 
-DATABASE_URL     = la même valeur que [supabase] database_url
+Le fichier .github/workflows/weekly_report.yml doit se trouver à la RACINE du dépôt. Il retrouve tout seul le dossier de l'application (celui qui contient jobs/weekly_report.py), même si l'application est dans un sous-dossier. Le plus simple pour le créer : onglet Actions → « set up a workflow yourself » → nommer le fichier weekly_report.yml → coller le contenu → Commit changes.
+
+Secrets GitHub (Settings → Secrets and variables → Actions → New repository secret) — 7 obligatoires :
+
+DATABASE_URL     = la même valeur que [supabase] database_url dans Streamlit
 SMTP_HOST        = smtp.gmail.com
 SMTP_PORT        = 587
-SMTP_USER        = votre.adresse@gmail.com
-SMTP_PASSWORD    = mot de passe d'application Gmail
+SMTP_USER        = l'adresse Gmail d'envoi
+SMTP_PASSWORD    = mot de passe d'APPLICATION Gmail (16 lettres minuscules)
 SMTP_SECURITY    = starttls
-REPORT_TO        = votre.adresse@gmail.com   (rapport du desk si aucun portefeuille n'est suivi)
+REPORT_TO        = l'adresse qui reçoit les rapports
 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID       (optionnel : rapport et alertes aussi sur Telegram)
 
-Test : onglet Actions → « MAM — rapport hebdomadaire et alertes » → Run workflow → mode weekly. Les PNG générés sont aussi téléchargeables 30 jours dans l'onglet Actions.
+Valeurs sans guillemets. Les mêmes réglages SMTP doivent figurer dans les secrets Streamlit (section [email]) pour l'envoi depuis l'application.
+
+Mot de passe d'application Gmail
+Le mot de passe Gmail habituel ne fonctionne pas. Sur myaccount.google.com, avec le compte de SMTP_USER : activer la validation en deux étapes, puis rechercher « Mots de passe des applications » → nom « MAM » → Create. Google affiche 16 lettres une seule fois : les copier dans SMTP_PASSWORD (espaces acceptés, ils sont retirés automatiquement).
+
+Test
+Onglet Actions → « MAM — rapport hebdomadaire et alertes » → Run workflow → mode weekly. Après 2 à 4 minutes : coche verte = email envoyé (vérifier les spams la première fois) ; croix rouge = échec d'envoi. Les PNG générés restent téléchargeables 30 jours dans l'exécution (section Artifacts).
+
+Dépannage
+Le journal de l'étape « Générer et envoyer » commence par un diagnostic des réglages email, qui affiche OK ou PROBLÈME pour chaque secret sans révéler sa valeur (GitHub masque les valeurs secrètes par ***). L'envoi essaie automatiquement STARTTLS sur le port 587 puis SSL sur le port 465, et indique à quelle étape la connexion a échoué.
+- « SMTP_PASSWORD fait 16 caractères… (lu : 18) » ou connexion coupée à l'étape « authentification » : ce n'est pas un mot de passe d'application valide → en créer un nouveau et mettre à jour SMTP_PASSWORD.
+- « Identifiants refusés » : SMTP_USER et le mot de passe d'application ne correspondent pas au même compte Google.
+- Les avertissements « Node.js 20 is deprecated » ou « ubuntu-latest will migrate » sont sans effet.
+
+Nom de l'expéditeur
+Les emails partent sous le nom « MAM Hedge Fund Agent ». Quand SMTP_USER et REPORT_TO sont la même adresse, Gmail affiche « moi / me » à la place du nom : c'est un comportement de Gmail. Pour voir le nom, recevoir sur une autre adresse (REPORT_TO), ou mieux, créer une adresse Gmail dédiée à l'envoi (ex. un compte « McKenson AM ») et mettre à jour SMTP_USER et SMTP_PASSWORD.
 
 Deploy on Streamlit Cloud
 Push to GitHub
