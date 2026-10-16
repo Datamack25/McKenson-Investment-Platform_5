@@ -56,6 +56,9 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(exist_ok=True)
 
+    log("Diagnostic des réglages email (les valeurs restent secrètes) :")
+    for line in AL.smtp_diagnostic():
+        log("   " + line)
     log("Chargement des marchés et de l'actualité…")
     ctx = load_context()
     px, missing, news, news_sim, macro, cov, data_sim = ctx
