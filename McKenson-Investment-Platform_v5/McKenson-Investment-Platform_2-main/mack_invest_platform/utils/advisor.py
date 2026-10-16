@@ -175,15 +175,24 @@ NEWS_THEMES = {
 # Rôle 1 — Données
 # ══════════════════════════════════════════════════════════════════════════════
 def _simulated_prices(tickers, n=520, seed=7) -> pd.DataFrame:
+    """Séries simulées plausibles (indicateurs de niveau en retour à la moyenne)."""
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=n)
+    levels = {"^VIX": (18, 0.06, 5), "^TNX": (4.2, 0.02, 1), "^IRX": (4.0, 0.015, 1),
+              "DX-Y.NYB": (102, 0.01, 6), "EURUSD=X": (1.08, 0.01, 0.06)}
     out = {}
     for t in tickers:
-        base = {"^VIX": 18, "^TNX": 4.2, "^IRX": 4.0, "DX-Y.NYB": 102,
-                "EURUSD=X": 1.08}.get(t, 100.0)
-        vol = {"^VIX": .06, "BTC-USD": .035, "^TNX": .015, "^IRX": .01}.get(t, .011)
-        path = base * np.exp(np.cumsum(rng.normal(0.0002, vol, n)))
-        out[t] = path
+        if t in levels:
+            mu, k, sd = levels[t]
+            x = np.empty(n)
+            x[0] = mu
+            for i in range(1, n):
+                x[i] = x[i - 1] + k * (mu - x[i - 1]) + rng.normal(0, sd * 0.12)
+            out[t] = np.maximum(x, mu * 0.3)
+        else:
+            vol = {"BTC-USD": .035, "TLT": .009, "IEF": .005, "BIL": .0003, "LQD": .006,
+                   "HYG": .005}.get(t, .011)
+            out[t] = 100.0 * np.exp(np.cumsum(rng.normal(0.0002, vol, n)))
     return pd.DataFrame(out, index=idx)
 
 
@@ -682,7 +691,7 @@ def llm_briefing(context: str) -> str:
               "surveiller. N'invente aucun chiffre absent des données. Termine par une phrase "
               "rappelant qu'il ne s'agit pas d'un conseil en investissement.\n\n" + context)
     if provider == "gemini":
-        model = cfg.get("model", "gemini-2.0-flash")
+        model = cfg.get("model", "gemini-3.5-flash-lite")
         r = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
             params={"key": cfg["api_key"]}, timeout=40,
@@ -711,20 +720,92 @@ def context_for_llm(m: MacroView, news: dict, alloc: pd.Series | None = None) ->
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Journal (mémoire du desk)
+# Journal (mémoire du desk) — Supabase / PostgreSQL, repli sur fichier local
 # ══════════════════════════════════════════════════════════════════════════════
+# Utilise la même connexion que les portefeuilles MAM ([supabase] dans les secrets).
+# La table est créée automatiquement au premier enregistrement :
+#   hedge_fund_journal(id, created_at, user_key, decision, payload jsonb)
 JOURNAL_PATH = Path("data") / "hedge_fund_journal.json"
+_TABLE_READY = False
 
 
-def load_journal() -> list:
+def _database_url() -> str | None:
+    import os
+    if os.environ.get("DATABASE_URL"):      # GitHub Actions / exécution hors Streamlit
+        return os.environ["DATABASE_URL"]
+    try:
+        cfg = st.secrets["supabase"]
+    except Exception:
+        return None
+    if cfg.get("database_url"):
+        return cfg["database_url"]
+    # ancien mode : url du projet + mot de passe de la base
+    url, pwd = cfg.get("url"), cfg.get("db_password")
+    if url and pwd:
+        m = re.search(r"https?://([a-z0-9]+)\.supabase\.co", url)
+        if m:
+            return f"postgresql://postgres:{quote_plus(pwd)}@db.{m.group(1)}.supabase.co:5432/postgres"
+    return None
+
+
+def _connect():
+    url = _database_url()
+    if not url:
+        return None
+    try:
+        import psycopg2
+        return psycopg2.connect(url, connect_timeout=8)
+    except ImportError:
+        import psycopg  # psycopg 3
+        return psycopg.connect(url, connect_timeout=8)
+
+
+def _ensure_table(conn):
+    global _TABLE_READY
+    if _TABLE_READY:
+        return
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS hedge_fund_journal (
+                id         BIGSERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                user_key   TEXT NOT NULL,
+                decision   TEXT,
+                payload    JSONB NOT NULL
+            )""")
+        cur.execute("CREATE INDEX IF NOT EXISTS hedge_fund_journal_user_idx "
+                    "ON hedge_fund_journal (user_key, created_at DESC)")
+    conn.commit()
+    _TABLE_READY = True
+
+
+def current_user_key() -> str:
+    """Identifiant du compte connecté MAM (email / identifiant), sinon « invité »."""
+    if not st:
+        return "local"
+    u = st.session_state.get("mam_user")
+    if isinstance(u, dict):
+        for k in ("email", "username", "login", "id", "name"):
+            if u.get(k):
+                return str(u[k])
+    if u:
+        return str(u)
+    return "invité"
+
+
+def journal_backend() -> str:
+    return "Supabase" if _database_url() else "fichier local"
+
+
+def _load_file() -> list:
     try:
         return json.loads(JOURNAL_PATH.read_text(encoding="utf-8"))
     except Exception:
         return []
 
 
-def append_journal(entry: dict) -> list:
-    j = load_journal()
+def _save_file(entry: dict):
+    j = _load_file()
     j.append(entry)
     try:
         JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -732,4 +813,59 @@ def append_journal(entry: dict) -> list:
                                 encoding="utf-8")
     except Exception:
         pass
-    return j
+
+
+def load_journal(user_key: str | None = None, limit: int = 500) -> tuple[list, str | None]:
+    """Renvoie (entrées, erreur éventuelle). Entrées du compte connecté uniquement."""
+    user_key = user_key or current_user_key()
+    conn = None
+    try:
+        conn = _connect()
+        if conn is None:
+            return _load_file(), None
+        _ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT payload FROM hedge_fund_journal WHERE user_key = %s "
+                        "ORDER BY created_at ASC LIMIT %s", (user_key, limit))
+            rows = cur.fetchall()
+        out = []
+        for (p,) in rows:
+            out.append(p if isinstance(p, dict) else json.loads(p))
+        return out, None
+    except Exception as e:
+        return _load_file(), f"Base injoignable, journal local affiché ({e.__class__.__name__}: {e})"
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def append_journal(entry: dict, user_key: str | None = None) -> str | None:
+    """Enregistre une décision. Renvoie None si OK dans Supabase, sinon un message."""
+    user_key = user_key or current_user_key()
+    entry = dict(entry, utilisateur=user_key)
+    conn = None
+    try:
+        conn = _connect()
+        if conn is None:
+            _save_file(entry)
+            return "Supabase non configuré : décision enregistrée dans un fichier local temporaire."
+        _ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO hedge_fund_journal (user_key, decision, payload) "
+                        "VALUES (%s, %s, %s::jsonb)",
+                        (user_key, entry.get("decision"),
+                         json.dumps(entry, ensure_ascii=False, default=str)))
+        conn.commit()
+        return None
+    except Exception as e:
+        _save_file(entry)
+        return f"Base injoignable ({e.__class__.__name__}) : décision gardée en local temporairement."
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
