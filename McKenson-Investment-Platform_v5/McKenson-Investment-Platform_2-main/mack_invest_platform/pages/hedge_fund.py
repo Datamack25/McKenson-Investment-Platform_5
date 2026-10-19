@@ -470,6 +470,247 @@ def _render_factor_history(hist: pd.DataFrame, moves: list):
 # ══════════════════════════════════════════════════════════════════════════════
 # Page
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Exécution de la proposition : nouveau portefeuille / portefeuille existant
+# + couvertures par produits dérivés (au choix de l'investisseur)
+# ══════════════════════════════════════════════════════════════════════════════
+_EMOJIS = ["🦅", "🛡️", "📈", "🌍", "💼", "🎯", "⚖️", "🚀"]
+
+
+def _desk_weights(final: pd.Series) -> pd.Series:
+    """Allocation par classe → poids par ETF proxy (le monétaire BIL reste en liquidités)."""
+    w = {}
+    for cls, v in final.items():
+        if v > 0.0005:
+            t = A.CLASS_PROXY[cls]
+            w[t] = w.get(t, 0.0) + float(v)
+    return pd.Series(w, dtype=float)
+
+
+def _hedge_cards(hedges: list[dict], options_ok: bool) -> list[str]:
+    """Affiche les couvertures proposées ; renvoie les clés acceptées par l'investisseur."""
+    accepted = []
+    if not hedges:
+        st.info("Aucune exposition couvrable significative (≥ 5 % de l'actif net) dans cette allocation.")
+        return accepted
+    for h in hedges:
+        tag = ('<span class="hf-badge hf-warn">RECOMMANDÉE PAR LE DESK</span>' if h["recommandee"]
+               else '<span class="hf-badge" style="border:1px solid #475569;color:#94a3b8">FACULTATIVE</span>')
+        k1 = h["legs_unitaires"][0]["K"]
+        legs_txt = (f"achat de puts strike {k1:,.2f}" if h["strategie"] == "Put de protection" else
+                    f"achat put {k1:,.2f} / vente put {h['legs_unitaires'][1]['K']:,.2f}")
+        st.markdown(
+            f'<div class="hf-card"><div class="hf-title" style="font-size:.95rem">🛡️ {html.escape(h["panier"])} '
+            f'· {_fmt_money(h["exposition"])} $ exposés {tag}</div>'
+            f'<div class="hf-sub" style="font-size:.78rem;line-height:1.7">'
+            f'<b>Protège contre :</b> {html.escape(h["protege_contre"])}.<br>'
+            f'<b>Pourquoi :</b> {html.escape(" ; ".join(h["pourquoi"]))}.<br>'
+            f'<b>Proposition :</b> {h["strategie"]} sur <b>{h["sous_jacent"]}</b> ({legs_txt}, échéance '
+            f'{h["echeance"]} j) — <b>{h["contrats"]} contrat(s)</b>, soit {h["ratio_effectif"]:.0%} de '
+            f'l\'exposition couverte (cible {h["ratio"]:.0%}).<br>'
+            f'<b>Coût :</b> {_fmt_money(h["cout"])} $ ({h["cout_pct"]:.2%} de l\'actif net) · '
+            f'<b>si {h["sous_jacent"]} baisse de {abs(h["choc"]):.0%} :</b> perte sans couverture '
+            f'{_fmt_money(h["perte_sans"])} $ → avec couverture {_fmt_money(h["perte_avec"])} $'
+            + ("" if h["contrats"] else
+               f'<br><span style="color:#f59e0b">Exposition trop faible pour un contrat '
+               f'(1 contrat ≈ {_fmt_money(h["valeur_contrat"])} $ de nominal).</span>')
+            + '</div></div>', unsafe_allow_html=True)
+        ok = st.checkbox(f"Inclure la couverture « {h['panier']} »", key=f"hf_hedge_{h['cle']}",
+                         value=bool(h["recommandee"] and h["contrats"] > 0),
+                         disabled=h["contrats"] <= 0)
+        if ok and h["contrats"] > 0:
+            accepted.append(h["cle"])
+    chosen = [h for h in hedges if h["cle"] in accepted]
+    if chosen:
+        tot_cost = sum(h["cout"] for h in chosen)
+        tbl = pd.DataFrame([{
+            "Couverture": f'{h["panier"]} ({h["sous_jacent"]})', "Scénario": f'{h["sous_jacent"]} {h["choc"]:+.0%}',
+            "Perte sans couverture": h["perte_sans"], "Gain des options": h["gain_couverture"],
+            "Coût": -h["cout"], "Perte avec couverture": h["perte_avec"]} for h in chosen])
+        st.markdown(f"**Effet des couvertures retenues** — coût total {_fmt_money(tot_cost)} $ "
+                    f"(assurance payée d'avance, perdue si le marché ne baisse pas)")
+        st.dataframe(tbl.style.format({c: "{:,.0f} $" for c in tbl.columns if c not in ("Couverture", "Scénario")}),
+                     use_container_width=True, hide_index=True)
+    else:
+        st.caption("Aucune couverture retenue : le portefeuille restera entièrement exposé aux baisses de marché.")
+    if not options_ok:
+        st.warning("🔒 Votre profil investisseur n'autorise pas encore les options : les couvertures seront "
+                   "bloquées par la conformité (règle O01). Passez le test dans Trading Desk → « Mon profil investisseur ».")
+    return accepted
+
+
+def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, profile: str,
+                      intensity: float, capital: float):
+    from utils.data import get_or_init_state, persist, get_multi_prices
+    from utils.auto_portfolio import plan_orders, execute_orders
+    from utils import hedging as H
+    from utils.compliance import get_profile
+
+    state = get_or_init_state()
+    teams = state.setdefault("teams", {})
+    weights = _desk_weights(final)
+    vix = (macro.indicators or {}).get("vix")
+
+    st.markdown("##### 🎯 Exécution de la proposition")
+    dests = ["🆕 Créer un nouveau portefeuille", "✏️ Modifier un portefeuille existant",
+             "📒 Journal uniquement (sans exécution)"]
+    dest = st.radio("Que faire de cette proposition ?", dests, key="hf_dest", horizontal=True)
+
+    port, port_label, mode, pct, new_cfg = None, "", "cash", 1.0, {}
+    projected, nav = {}, float(capital)
+    if dest == dests[0]:
+        c1, c2, c3 = st.columns([2, 1, 1.5])
+        name = c1.text_input("Nom du nouveau portefeuille",
+                             value=f"Desk {profile} — {datetime.now():%d/%m/%Y}", key="hf_new_name")
+        emoji = c2.selectbox("Icône", _EMOJIS, key="hf_new_emoji")
+        team_opts = {tid: f'{t.get("emoji", "🏢")} {t.get("name", tid)}' for tid, t in teams.items()}
+        team_opts.setdefault("__solo__", "👤 Solo")
+        default_team = st.session_state.get("active_team")
+        keys = list(team_opts)
+        tid = c3.selectbox("Équipe", keys, format_func=lambda k: team_opts[k],
+                           index=keys.index(default_team) if default_team in keys else 0, key="hf_new_team")
+        new_cfg = dict(name=name.strip() or f"Desk {profile}", emoji=emoji, tid=tid)
+        port_label = f"{emoji} {new_cfg['name']}"
+        projected = {t: w * capital for t, w in weights.items() if t != "BIL"}
+        st.caption(f"Le portefeuille sera créé avec {_fmt_money(capital)} $ (champ « Capital » ci-dessus), "
+                   "investi selon l'allocation finale du desk ; la poche monétaire reste en liquidités.")
+    elif dest == dests[1]:
+        ports = {(t_id, pid): (f'{p.get("emoji", "📁")} {p["name"]} · {teams[t_id].get("name", "Solo")}', p)
+                 for t_id, team in teams.items() for pid, p in team.get("portfolios", {}).items() if p.get("name")}
+        if not ports:
+            st.info("Aucun portefeuille existant : choisissez « Créer un nouveau portefeuille ».")
+            return
+        keys = list(ports)
+        active = (st.session_state.get("active_team"), st.session_state.get("active_portfolio"))
+        sel = st.selectbox("Portefeuille à modifier", keys, format_func=lambda k: ports[k][0],
+                           index=keys.index(active) if active in keys else 0, key="hf_mod_port")
+        port_label, port = ports[sel]
+        c1, c2 = st.columns([2, 1])
+        m = c1.radio("Mode", ["Investir uniquement le cash disponible",
+                              "Rééquilibrer tout le portefeuille vers l'allocation du desk"], key="hf_mod_mode")
+        mode = "cash" if m.startswith("Investir") else "full"
+        pct = c2.slider("Part à investir", 0.1, 1.0, 0.9, 0.05, key="hf_mod_pct")
+        live = get_multi_prices(tuple(sorted(set(weights.index) | set(port.get("holdings", {})))))
+        orders = plan_orders(port, weights, live, pct, mode)
+        current = {t: h.get("qty", 0) * live.get(t, (h.get("avg_price", 0), 0))[0]
+                   for t, h in port.get("holdings", {}).items()}
+        nav = float(port.get("cash", 0)) + sum(current.values())
+        projected = dict(current)
+        for _, o in orders.iterrows():
+            projected[o["ticker"]] = projected.get(o["ticker"], 0.0) + (o["montant"] if o["action"] == "BUY"
+                                                                       else -o["montant"])
+        if orders.empty:
+            st.info("Aucun ordre spot nécessaire (cash insuffisant ou portefeuille déjà aligné) — "
+                    "vous pouvez tout de même ajouter des couvertures.")
+        else:
+            st.dataframe(orders.style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
+                         use_container_width=True, hide_index=True)
+        if mode == "full":
+            st.warning("Le rééquilibrage complet vend les lignes qui ne font pas partie de l'allocation du desk.")
+
+    # ── Couvertures par dérivés ───────────────────────────────────────────────
+    accepted = []
+    if dest != dests[2]:
+        st.markdown("##### 🛡️ Couvertures par produits dérivés")
+        st.caption("Le desk ne s'arrête pas aux actifs : pour chaque exposition importante, il propose une option "
+                   "qui compense une baisse du marché concerné (Nasdaq, S&P 500, Europe, émergents, énergie, "
+                   "matières premières, taux). Ce sont des recommandations : c'est vous qui décidez, selon votre "
+                   "tolérance au risque, de les garder ou de les retirer.")
+        hedges = H.propose_hedges(H.exposures_from_values(projected), macro.factors, vix, nav)
+        accepted = _hedge_cards(hedges, get_profile().get("options_ok", False))
+
+    # ── Validation humaine ────────────────────────────────────────────────────
+    st.markdown("##### Validation humaine")
+    note = st.text_input("Commentaire (facultatif)", key="hf_note")
+    executing = dest != dests[2]
+    confirm = True
+    if executing:
+        confirm = st.checkbox(f"Je confirme l'exécution simulée dans « {port_label} »"
+                              + (f" avec {len(accepted)} couverture(s)" if accepted else " sans couverture")
+                              + " — chaque ordre est contrôlé par la conformité", key="hf_confirm")
+    entry = dict(date=datetime.now().isoformat(timespec="seconds"), profil=profile,
+                 regime=macro.regime, intensite=intensity, capital=capital,
+                 facteurs={k: round(v, 2) for k, v in macro.factors.items()},
+                 allocation={c: round(float(w), 4) for c, w in final.items() if w > 0.0005},
+                 donnees_simulees=data_sim, commentaire=note,
+                 destination=dest, portefeuille=port_label, couvertures=accepted)
+    b1, b2, b3 = st.columns([1.3, 1, 1.2])
+    label = "✅ Valider et exécuter" if executing else "✅ Valider la proposition"
+    if b1.button(label, key="hf_ok", disabled=executing and not confirm):
+        if not executing:
+            msg = A.append_journal(entry | dict(decision="validée"))
+            st.success("Proposition validée et inscrite au journal.")
+            if msg:
+                st.warning(msg)
+        elif not allowed:
+            A.append_journal(entry | dict(decision="validée — exécution bloquée (données simulées)"))
+            st.error("⛔ Exécution bloquée par le moteur de risque : données de marché simulées. "
+                     "La proposition est inscrite au journal.")
+        else:
+            _execute(dest == dests[0], new_cfg, port, weights, mode, pct, accepted, macro, vix, entry, teams)
+    if b2.button("❌ Rejeter", key="hf_ko"):
+        msg = A.append_journal(entry | dict(decision="rejetée"))
+        st.info("Proposition rejetée et inscrite au journal.")
+        if msg:
+            st.warning(msg)
+    orders_csv = pd.DataFrame({"Classe": final.index, "Proxy": [A.CLASS_PROXY[c] for c in final.index],
+                               "Poids": final.round(4).values, "Montant": (final * capital).round(2).values})
+    b3.download_button("⬇️ Ordres (CSV)", orders_csv.to_csv(index=False).encode("utf-8"),
+                       f"ordres_desk_{datetime.now():%Y%m%d}.csv", "text/csv", key="hf_csv")
+    st.caption(DISCLAIMER)
+
+
+def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series, mode: str, pct: float,
+             accepted: list[str], macro, vix, entry: dict, teams: dict):
+    import uuid
+    from utils.data import persist, get_multi_prices
+    from utils.auto_portfolio import plan_orders, execute_orders
+    from utils import hedging as H
+
+    if is_new:
+        tid = new_cfg["tid"]
+        if tid not in teams:
+            teams[tid] = {"id": tid, "name": "Solo", "emoji": "👤", "portfolios": {}}
+        pid = "P" + uuid.uuid4().hex[:6].upper()
+        cap = float(entry["capital"])
+        port = {"id": pid, "name": new_cfg["name"], "emoji": new_cfg["emoji"], "strategy": "Global Macro",
+                "portfolio_type": "Libre", "asset_types": [], "cash": cap, "initial_cash": cap,
+                "holdings": {}, "trades": [], "history": [], "options": [],
+                "created": datetime.now().isoformat(timespec="seconds"), "source": "Hedge Fund Agent"}
+        teams[tid]["portfolios"][pid] = port
+        st.session_state["_select_portfolio"] = (tid, pid)
+        mode, pct = "cash", 1.0
+    live = get_multi_prices(tuple(sorted(set(weights.index) | set(port.get("holdings", {})))))
+    orders = plan_orders(port, weights, live, pct, mode)
+    errs = execute_orders(port, orders, tag="Hedge Fund Agent") if not orders.empty else []
+
+    # Couvertures recalculées sur le portefeuille réellement obtenu
+    hedge_errs, done = [], []
+    if accepted:
+        hold = port.get("holdings", {})
+        live2 = get_multi_prices(tuple(sorted(hold)))
+        vals = {t: h.get("qty", 0) * live2.get(t, (h.get("avg_price", 0), 0))[0] for t, h in hold.items()}
+        nav = port.get("cash", 0.0) + sum(vals.values())
+        for h in H.propose_hedges(H.exposures_from_values(vals), macro.factors, vix, nav):
+            if h["cle"] in accepted:
+                e = H.execute_hedge(port, h)
+                (hedge_errs.append(e) if e else done.append(f'{h["panier"]} ({h["contrats"]} × {h["sous_jacent"]})'))
+    persist()
+    msg = A.append_journal(entry | dict(decision="validée et exécutée", couvertures_executees=done,
+                                        ordres=len(orders), refus=errs + hedge_errs))
+    st.success(f"✅ {'Portefeuille créé' if is_new else 'Portefeuille modifié'} : {entry['portefeuille']} — "
+               f"{len(orders) - len(errs)} ordre(s) spot"
+               + (f", couvertures : {', '.join(done)}" if done else ", aucune couverture") + ".")
+    if errs or hedge_errs:
+        st.warning("Certains ordres ont été bloqués par la conformité :\n\n- " + "\n- ".join(errs + hedge_errs))
+    if msg:
+        st.warning(msg)
+    if is_new:
+        st.info("Le nouveau portefeuille est sélectionné dans la barre du haut dès le prochain affichage "
+                "(cliquez sur n'importe quel onglet) ; ses positions et couvertures sont visibles dans le "
+                "Trading Desk et le Dashboard.")
+
+
 def render():
     _reset_pkeys()
     st.markdown(_CSS, unsafe_allow_html=True)
@@ -601,7 +842,8 @@ def render():
         profile = c1.selectbox("Profil", list(A.PROFILES), index=1, key="hf_profile")
         intensity = c2.slider("Intensité tactique", 0.0, 1.0, 0.5, 0.1, key="hf_int",
                               help="0 = allocation stratégique pure ; 1 = inclinaisons macro maximales")
-        capital = c3.number_input("Capital (simulation)", 1_000, 100_000_000, 100_000, 1_000, key="hf_cap")
+        capital = c3.number_input("Capital (simulation)", 1_000, 100_000_000, 1_000_000, 10_000, key="hf_cap",
+                                  help="Capital d'un nouveau portefeuille créé par le desk. Les options sur ETF portent sur 100 titres : sous ~200 000 $, les couvertures risquent d'être trop petites pour un contrat.")
 
         prop = A.propose_allocation(macro.factors, profile, intensity)
         final, checks, allowed = A.risk_engine(prop["Proposée (avant risque)"], profile,
@@ -639,31 +881,7 @@ def render():
         st.dataframe(pd.DataFrame(checks), use_container_width=True, hide_index=True)
         _bar_h(stress * 100, "Stress tests de l'allocation finale (%)", fmt="+.1f")
 
-        st.markdown("##### Validation humaine")
-        note = st.text_input("Commentaire (facultatif)", key="hf_note")
-        b1, b2, b3 = st.columns([1, 1, 2])
-        entry = dict(date=datetime.now().isoformat(timespec="seconds"), profil=profile,
-                     regime=macro.regime, intensite=intensity, capital=capital,
-                     facteurs={k: round(v, 2) for k, v in macro.factors.items()},
-                     allocation={c: round(float(w), 4) for c, w in final.items() if w > 0.0005},
-                     donnees_simulees=data_sim, commentaire=note)
-        if b1.button("✅ Valider la proposition", key="hf_ok"):
-            msg = A.append_journal(entry | dict(decision="validée"))
-            st.success("Proposition validée et inscrite au journal."
-                       + ("" if allowed else " Exécution bloquée : données simulées."))
-            if msg:
-                st.warning(msg)
-        if b2.button("❌ Rejeter", key="hf_ko"):
-            msg = A.append_journal(entry | dict(decision="rejetée"))
-            st.info("Proposition rejetée et inscrite au journal.")
-            if msg:
-                st.warning(msg)
-        orders = pd.DataFrame({"Classe": final.index, "Proxy": [A.CLASS_PROXY[c] for c in final.index],
-                               "Poids": final.round(4).values, "Montant": (final * capital).round(2).values})
-        b3.download_button("⬇️ Ordres (CSV)", orders.to_csv(index=False).encode("utf-8"),
-                           f"ordres_desk_{datetime.now():%Y%m%d}.csv", "text/csv", key="hf_csv")
-        st.caption("Pour exécuter dans un portefeuille MAM, utilisez ces poids dans 🤖 Auto-Portefeuille "
-                   "ou le Trading Desk. " + DISCLAIMER)
+        _render_execution(final, allowed, data_sim, macro, profile, intensity, capital)
 
     # ── 3. Conseils pour un portefeuille existant ─────────────────────────────
     with t3:

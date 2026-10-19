@@ -7,6 +7,7 @@ FIXES v7.1:
 """
 from __future__ import annotations
 import uuid
+import pandas as pd
 import streamlit as st
 
 from components.ui import section_title
@@ -280,10 +281,8 @@ def _do_create(state: dict, team_mode: str, chosen_team_id):
         temoji = st.session_state.get("wiz_new_team_emoji", "🏢")
         tid    = "T" + uuid.uuid4().hex[:6].upper()
         teams[tid] = {"id":tid,"name":tname,"emoji":temoji,"portfolios":{}}
-        st.session_state["active_team"] = tid
     elif team_mode == "Rejoindre une équipe existante" and chosen_team_id:
         tid = chosen_team_id
-        st.session_state["active_team"] = tid
     else:
         solo_key = "__solo__"
         if solo_key not in teams:
@@ -297,7 +296,8 @@ def _do_create(state: dict, team_mode: str, chosen_team_id):
         "cash":float(capital),"initial_cash":float(capital),
         "holdings":{},"trades":[],"history":[],
     }
-    st.session_state["active_portfolio"] = pid
+    # sélection appliquée par app.py avant la création des sélecteurs (évite l'erreur Streamlit)
+    st.session_state["_select_portfolio"] = (tid, pid)
     persist()
     for k in list(st.session_state.keys()):
         if k.startswith("wiz_"):
@@ -400,6 +400,104 @@ def _comparison_panel(state: dict, live: dict):
         unsafe_allow_html=True)
 
 
+_PERF_COLORS = ["#00d4ff", "#00ff88", "#ffd700", "#7c3aed", "#ff8c00", "#ff3b6b", "#94a3b8", "#22d3ee"]
+
+
+def _performance_panel(all_ports: list):
+    """Performance dans le temps : un portefeuille vs le marché, ou plusieurs portefeuilles comparés."""
+    import plotly.graph_objects as go
+    from utils import performance as PF
+
+    cands = [it for it in all_ports if any(str(t.get("action", "")).upper() in ("BUY", "SELL")
+                                           for t in it["port"].get("trades", []) or [])]
+    if not cands:
+        return
+    st.markdown("<br>", unsafe_allow_html=True)
+    multi = len(cands) >= 2
+    section_title("PERFORMANCE COMPARÉE DES PORTEFEUILLES" if multi else "PERFORMANCE VS MARCHÉ", "📈")
+
+    labels = {f'{it["port"].get("emoji", "📁")} {it["port"]["name"]} · {it["team_label"]}': it for it in cands}
+    c1, c2 = st.columns([3, 1.3])
+    with c1:
+        if multi:
+            chosen = st.multiselect("Portefeuilles à comparer", list(labels), default=list(labels)[:8],
+                                    max_selections=8, key="perf_ports")
+        else:
+            chosen = list(labels)
+    with c2:
+        bench_name = st.selectbox("Indice de référence", list(PF.BENCHMARKS), key="perf_bench")
+        show_bench = st.checkbox("Afficher l'indice", value=True, key="perf_show_bench") if multi else True
+    if not chosen:
+        st.info("Sélectionnez au moins un portefeuille.")
+        return
+
+    with st.spinner("Reconstitution de l'historique des portefeuilles…"):
+        series = {}
+        sources = set()
+        for lab in chosen:
+            s, src = PF.portfolio_series(labels[lab]["port"])
+            series[lab] = s
+            sources.add(src)
+    valid = {k: v for k, v in series.items() if len(v.dropna()) >= 1}
+    if not valid:
+        st.info("Historique insuffisant pour tracer la performance.")
+        return
+    start = min(v.index.min() for v in valid.values())
+    bench = PF.benchmark_series(bench_name, start)
+
+    fig = go.Figure()
+    for i, (lab, s) in enumerate(valid.items()):
+        b = PF.base100(s)
+        fig.add_trace(go.Scatter(x=b.index, y=b.values, mode="lines+markers" if len(b) < 15 else "lines",
+                                 name=lab.split(" · ")[0], line=dict(width=2.4, color=_PERF_COLORS[i % 8]),
+                                 hovertemplate="%{x|%d/%m/%Y} · %{y:.2f}<extra>" + lab.split(" · ")[0] + "</extra>"))
+    if show_bench and len(bench.dropna()) >= 2:
+        bb = PF.base100(bench[bench.index >= start])
+        fig.add_trace(go.Scatter(x=bb.index, y=bb.values, mode="lines", name=bench_name,
+                                 line=dict(width=2, color="#e2e8f0", dash="dash"),
+                                 hovertemplate="%{x|%d/%m/%Y} · %{y:.2f}<extra>" + bench_name + "</extra>"))
+    fig.add_hline(y=100, line_color="rgba(255,255,255,.15)")
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(color="#94a3b8", family="Share Tech Mono"), height=340,
+                      margin=dict(l=8, r=8, t=10, b=8), hovermode="x unified",
+                      legend=dict(orientation="h", y=1.08, bgcolor="rgba(0,0,0,0)"),
+                      xaxis=dict(gridcolor="rgba(255,255,255,.04)"),
+                      yaxis=dict(title="Base 100", gridcolor="rgba(255,255,255,.04)"))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Indicateurs de gestion ──
+    rows = []
+    for lab, s in valid.items():
+        m = PF.metrics(s, bench if len(bench.dropna()) >= 2 else None)
+        rows.append({"Portefeuille": lab.split(" · ")[0], **m})
+    df = pd.DataFrame(rows).sort_values("Performance", ascending=False)
+    pct_cols = ["Performance", "Perf. indice", "Surperformance", "Volatilité (ann.)", "Perte max", "Écart de suivi"]
+    fmt = {c: (lambda v: "—" if pd.isna(v) else f"{v:+.2%}") for c in pct_cols}
+    fmt.update({c: (lambda v: "—" if pd.isna(v) else f"{v:.2f}") for c in ("Sharpe", "Bêta", "Ratio d'information")})
+
+    if not multi:
+        m = rows[0]
+        k = st.columns(5)
+        def _v(x, pct=True, sign=True):
+            return "—" if pd.isna(x) else (f"{x:+.2%}" if pct and sign else f"{x:.2%}" if pct else f"{x:.2f}")
+        k[0].metric("Performance", _v(m["Performance"]))
+        k[1].metric(bench_name, _v(m["Perf. indice"]))
+        k[2].metric("Surperformance", _v(m["Surperformance"]),
+                    delta=None if pd.isna(m["Surperformance"]) else ("bat le marché" if m["Surperformance"] > 0
+                                                                     else "sous le marché"),
+                    delta_color="normal" if not pd.isna(m["Surperformance"]) and m["Surperformance"] > 0 else "inverse")
+        k[3].metric("Bêta", _v(m["Bêta"], pct=False))
+        k[4].metric("Perte max", _v(m["Perte max"]))
+    st.dataframe(df.style.format(fmt), use_container_width=True, hide_index=True)
+    st.caption(
+        f"Base 100 au premier jour d'investissement · source : {', '.join(sorted(sources))} · indice : "
+        f"{bench_name} ({'disponible' if len(bench.dropna()) >= 2 else 'indisponible'}). "
+        "Bêta > 1 : le portefeuille amplifie les mouvements du marché ; surperformance = performance du "
+        "portefeuille − performance de l'indice sur la même période ; ratio d'information = surperformance "
+        "annualisée / écart de suivi. NAV reconstituée à partir des achats / ventes au comptant (options neutralisées). "
+        "Les indicateurs annualisés nécessitent au moins 5 jours de cotation.")
+
+
 def render():
     import streamlit as st
     state = get_or_init_state()
@@ -482,6 +580,7 @@ def render():
                 live_prices[tk] = float(p)
 
     _comparison_panel(state, live)
+    _performance_panel(all_ports)
 
     ports_with_pos = [item for item in all_ports if item["port"].get("holdings")]
     if not ports_with_pos:

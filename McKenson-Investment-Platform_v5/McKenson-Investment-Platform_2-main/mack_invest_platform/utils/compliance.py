@@ -454,6 +454,15 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONTRÔLES — OPTIONS ET STRATÉGIES
 # ══════════════════════════════════════════════════════════════════════════════
+def _is_put_protection(legs: list[dict]) -> bool:
+    """Uniquement des puts, avec au moins autant de puts achetés que vendus (put / put spread)."""
+    if not legs or any(l["type"] != "put" for l in legs):
+        return False
+    long_ = sum(l["qty"] for l in legs if l["qty"] > 0)
+    short = sum(-l["qty"] for l in legs if l["qty"] < 0)
+    return long_ > 0 and short <= long_
+
+
 def _open_option_exposure(port: dict, ticker: str, mult: int) -> tuple[float, float]:
     """(titres engagés par des calls vendus ouverts − calls achetés, primes payées ouvertes)."""
     short_units, paid = 0.0, 0.0
@@ -468,8 +477,12 @@ def _open_option_exposure(port: dict, ticker: str, mult: int) -> tuple[float, fl
 
 def pre_trade_options(port: dict, ticker: str, legs: list[dict], *, spot: float, mult: int,
                       T_days: int, r: float, sigma: float, profile: dict | None = None,
-                      prices: dict | None = None, price_source: str | None = None) -> tuple[Decision, dict]:
-    """Contrôle d'un ensemble de jambes (option seule ou stratégie). Renvoie (décision, analyse)."""
+                      prices: dict | None = None, price_source: str | None = None,
+                      hedge_exposure: float | None = None) -> tuple[Decision, dict]:
+    """Contrôle d'un ensemble de jambes (option seule ou stratégie). Renvoie (décision, analyse).
+    hedge_exposure : montant ($) de l'exposition du portefeuille que la stratégie protège
+    (couverture d'indice proposée par le desk). Des puts achetés dont le nominal ne dépasse
+    pas cette exposition sont traités comme une couverture."""
     from utils.option_strategies import analyze, usage_level, LEVEL_LABEL
 
     d = Decision("option")
@@ -502,6 +515,13 @@ def pre_trade_options(port: dict, ticker: str, legs: list[dict], *, spot: float,
     committed, paid_open = _open_option_exposure(port, ticker, mult)
     free_shares = max(held - committed, 0.0)
     level = usage_level(legs, mult, shares_held=free_shares)
+    hedge_note = ""
+    if level == "risque_limite" and hedge_exposure and _is_put_protection(legs):
+        notional = sum(l["qty"] * mult * l["K"] for l in legs if l["type"] == "put" and l["qty"] > 0)
+        if notional <= hedge_exposure * 1.10:
+            level = "couverture"
+            hedge_note = (f" — couverture de portefeuille : nominal {notional:,.0f} $ ≤ exposition "
+                          f"protégée {hedge_exposure:,.0f} $")
     if level == "illimite":
         d.add("O03", "block", f"Calls vendus non couverts : {free_shares:,.0f} titres {ticker} disponibles "
                               f"(détenus {held:,.0f}, déjà engagés {committed:,.0f}).")
@@ -512,7 +532,7 @@ def pre_trade_options(port: dict, ticker: str, legs: list[dict], *, spot: float,
             d.add("O02", "block", f"Stratégie de type « {LEVEL_LABEL[level]} », profil {risk} limité à "
                                   f"« {LEVEL_LABEL[allowed]} ».")
         else:
-            d.add("O02", "ok", f"{LEVEL_LABEL[level]} — autorisé pour le profil {risk}")
+            d.add("O02", "ok", f"{LEVEL_LABEL[level]} — autorisé pour le profil {risk}{hedge_note}")
 
     # C07 — provision (achat de titres + prime nette)
     need = a["stock_cost"] + a["debit"]

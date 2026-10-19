@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="MAM — McKenson Asset Management · v5.1",
+    page_title="MAM — McKenson Asset Management · v5.2",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -374,6 +374,11 @@ pages = {
     "🏢 Administration":      "admin",
 }
 render_nav(pages)
+# Sélection demandée par une autre page (ex. portefeuille créé par le Hedge Fund Agent) :
+# appliquée ici, avant la création des sélecteurs équipe / portefeuille.
+_sel = st.session_state.pop("_select_portfolio", None)
+if _sel and _sel[0] in state.get("teams", {}) and _sel[1] in state["teams"][_sel[0]].get("portfolios", {}):
+    st.session_state["active_team"], st.session_state["active_portfolio"] = _sel
 sel_team, user_ports = render_account_bar(state)
 render_portfolio_cards(user_ports)
 

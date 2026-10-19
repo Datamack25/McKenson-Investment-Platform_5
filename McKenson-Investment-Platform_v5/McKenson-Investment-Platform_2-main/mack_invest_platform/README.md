@@ -1,13 +1,30 @@
-📈 McKenson Investment Platform - MIP — version 5.1.0
+📈 McKenson Investment Platform - MIP — version 5.2.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.1.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.2.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.2 — Hedge Fund Agent exécutable, couvertures par dérivés, performance vs marché
+🦅 Hedge Fund Agent → Validation humaine : la proposition du desk peut CRÉER UN NOUVEAU PORTEFEUILLE (nom,
+   icône, équipe, capital) ou MODIFIER UN PORTEFEUILLE EXISTANT (investir le cash ou rééquilibrer), ou être
+   seulement inscrite au journal. Tous les ordres passent par la conformité.
+🛡️ Couvertures par produits dérivés (utils/hedging.py) : pour chaque exposition importante (Nasdaq / tech via
+   QQQ, S&P 500 via SPY, Europe via VGK, émergents via EEM, énergie via XLE, pétrole / matières premières via USO,
+   obligations longues via TLT), le desk propose un put de protection ou un put spread (si la volatilité est
+   élevée), avec un ratio de couverture qui dépend des facteurs macro (stress, géopolitique, croissance,
+   politique monétaire, énergie…). Pour chacune : pourquoi, coût, part couverte et perte en cas de baisse
+   avec / sans couverture. L'investisseur coche ou retire chaque couverture selon sa tolérance au risque.
+   La conformité traite une couverture d'indice dont le nominal ne dépasse pas l'exposition comme une
+   « couverture » (autorisée pour tous les profils) ; au-delà, c'est de la spéculation (règle O02).
+📈 Dashboard : un portefeuille → graphique base 100 vs indice (S&P 500, MSCI World, Nasdaq 100, CAC 40,
+   60/40) + performance, surperformance, bêta, perte max ; plusieurs portefeuilles → graphique comparatif +
+   tableau (volatilité, Sharpe, écart de suivi, ratio d'information). NAV reconstituée à partir des
+   transactions et des cours historiques (utils/performance.py).
 
 Nouveautés v5.1 — ETF, conformité, stratégies d'options, sécurité
 🧺 Univers ETF élargi (data/assets_etf.csv, chargé automatiquement) : ~40 ETF UCITS (IWDA, VWCE, CSPX, EIMI,
@@ -211,6 +228,8 @@ eslsca_platform/
 │   ├── compliance.py       # v5.1 contrôles de conformité pré-négociation, profil investisseur, journal d'audit
 │   ├── option_strategies.py# v5.1 stratégies d'options multi-jambes selon le régime de marché
 │   ├── etf_universe.py     # v5.1 métadonnées ETF et portefeuilles modèles 100 % ETF
+│   ├── hedging.py          # v5.2 couvertures par options proposées par le desk
+│   ├── performance.py      # v5.2 NAV reconstituée, indicateurs de gestion, indices de référence
 │   └── legal.py            # v5.1 auteur, version, avertissements (source unique)
 └── components/
     ├── ai_shared.py        # chargement en cache du modèle, KPI, en-têtes des pages IA
@@ -225,4 +244,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.1.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.2.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
