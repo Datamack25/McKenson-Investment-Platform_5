@@ -233,8 +233,11 @@ def build_weekly_png(macro, news: dict, alerts: list, review: dict | None = None
         ax.text(0.975, yv, f"{lvl:.0f}/100", color=col, fontsize=8.3, fontweight="bold", va="top", ha="right")
         yv -= 0.15
 
-    fig.text(0.5, 0.018, "Outil pédagogique d'aide à la décision sur une plateforme de simulation : "
-             "ne constitue pas un conseil en investissement.", color=MUTED, fontsize=8, ha="center")
+    from utils.legal import CREDIT, AUTHOR
+    fig.text(0.5, 0.024, CREDIT, color=MUTED, fontsize=7.5, ha="center")
+    fig.text(0.5, 0.008, "Plateforme purement éducative : ne constitue pas un conseil en investissement. "
+             f"{AUTHOR} n'est pas responsable des décisions prises ni engagé par les conseils de la plateforme.",
+             color=MUTED, fontsize=7, ha="center")
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=BG)

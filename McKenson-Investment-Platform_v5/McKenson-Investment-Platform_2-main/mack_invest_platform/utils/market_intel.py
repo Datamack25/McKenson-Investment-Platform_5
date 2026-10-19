@@ -94,6 +94,13 @@ def asset_name(t: str) -> str:
 def asset_class(t: str) -> str:
     if t in UNIVERSE:
         return UNIVERSE[t][1]
+    try:  # ETF connus (univers ETF v5.1)
+        from utils.etf_universe import intel_class
+        _c = intel_class(t)
+        if _c:
+            return _c
+    except Exception:
+        pass
     if t.endswith("-USD"):
         return "Crypto"
     if t in ("GC=F", "SI=F"):
@@ -107,7 +114,8 @@ def asset_subclass(t: str) -> str:
     if t in UNIVERSE:
         return UNIVERSE[t][2]
     return {"Crypto": "crypto", "Or & métaux": "gold",
-            "Matières premières": "commo"}.get(asset_class(t), "us_eq")
+            "Matières premières": "commo", "Obligations": "gov_int",
+            "Monétaire": "cash"}.get(asset_class(t), "us_eq")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

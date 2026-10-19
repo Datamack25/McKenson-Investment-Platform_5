@@ -559,6 +559,14 @@ _ASIA_SUFFIX = (".HK", ".T", ".SS", ".SZ", ".KS", ".TW", ".NS", ".BO", ".SA", ".
 
 def classify_ticker(t: str) -> str | None:
     u = t.upper().strip()
+    # ETF connus (univers ETF v5.1) : classe déclarée dans data/assets_etf.csv
+    try:
+        from utils.etf_universe import etf_class
+        _c = etf_class(u)
+        if _c:
+            return _c
+    except Exception:
+        pass
     if u in ("CASH", "BIL", "SHV", "SGOV", "EUR", "USD"):
         return "Liquidités"
     if u.endswith("=X"):

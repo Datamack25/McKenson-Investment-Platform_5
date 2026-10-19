@@ -1,13 +1,15 @@
-# pages/trading.py  —  MAM v5.0
+# pages/trading.py  —  MAM v5.1
 """
 3 onglets :
-  1. SPOT TRADING — avec validation de stratégie
-  2. OPTIONS (Black-Scholes) — avec enregistrement correct
-  3. MES POSITIONS — Holdings spot + Options ouvertes + Historique
-     Performance globale = tous holdings selon stratégie
+  1. SPOT TRADING — univers filtrable (dont ETF), fiches ETF, portefeuilles modèles
+     ETF, contrôles de conformité expliqués avant chaque ordre
+  2. OPTIONS (Black-Scholes) — option simple + stratégies multi-jambes selon le
+     régime de marché, avec contrôles produits complexes
+  3. MES POSITIONS — Holdings spot + Options + Historique + Exposition & conformité
 """
 from __future__ import annotations
 import math
+import uuid
 from datetime import datetime, date
 
 import numpy as np
@@ -20,9 +22,15 @@ from utils.data import (
     get_or_init_state, persist, load_assets,
     get_price, get_price_change, get_history,
     get_multi_prices, value_portfolio, record_trade,
-    get_contract_mult, get_currency,
+    get_contract_mult, get_currency, get_price_source,
 )
 from utils.options import bs_price, bs_greeks, implied_vol
+from utils.compliance import (
+    PORTFOLIO_TYPES, CATEGORY_MAP, validate_mandate, normalize_port_type,
+    pre_trade_spot, pre_trade_options, log_decision, render_decision,
+    render_profile_panel, render_rules_reference, get_profile, recent_log, HARD_LIMITS,
+)
+from utils.legal import render_risk_banner
 
 _P = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -30,42 +38,19 @@ _P = dict(
     margin=dict(l=8, r=8, t=28, b=8),
 )
 
-# ── Règles par stratégie ───────────────────────────────────────────────────────
-PORTFOLIO_TYPES = {
-    "Libre":         {"emoji":"🔓","color":"#94a3b8","allowed":None,          "forbidden":[],                                  "max_w":1.0,  "rules":"Aucune contrainte."},
-    "Growth":        {"emoji":"🚀","color":"#00ff88","allowed":["Equities","ETF","Equity"], "forbidden":["Bonds","Commodities","Crypto"], "max_w":0.30, "rules":"Actions croissance. Interdit : bonds, commodities, crypto."},
-    "Value":         {"emoji":"💎","color":"#ffd700","allowed":["Equities","ETF","Equity"], "forbidden":["Crypto","Commodities"],         "max_w":0.25, "rules":"Actions décotées. Interdit : crypto, spéculatif."},
-    "Momentum":      {"emoji":"⚡","color":"#ff8c00","allowed":["Equities","ETF","Equity","Crypto"], "forbidden":["Bonds"],               "max_w":0.20, "rules":"Tendance positive. Interdit : obligations."},
-    "Income":        {"emoji":"💰","color":"#00d4ff","allowed":["Equities","ETF","Bonds","Equity"],  "forbidden":["Crypto"],              "max_w":0.20, "rules":"Dividendes + obligations. Interdit : crypto."},
-    "Global Macro":  {"emoji":"🌍","color":"#7c3aed","allowed":None,          "forbidden":[],                                  "max_w":0.25, "rules":"Multi-actifs. Max 25% par position."},
-    "Hedging":       {"emoji":"🛡️","color":"#475569","allowed":["Bonds","ETF","Commodities","Equities","Equity"], "forbidden":["Crypto"], "max_w":0.20, "rules":"Défensif. Interdit : crypto."},
-    "Balanced 60/40":{"emoji":"⚖️","color":"#00ff88","allowed":["Equities","Bonds","ETF","Equity"],  "forbidden":["Crypto","Commodities"],"max_w":0.20, "rules":"60% actions / 40% bonds."},
-    "Commodity":     {"emoji":"🏭","color":"#ff8c00","allowed":["Commodities","ETF"],       "forbidden":["Crypto","Equities","Bonds","Equity"], "max_w":0.30, "rules":"Commodities uniquement."},
-    "Crypto Alpha":  {"emoji":"₿", "color":"#ff3b6b","allowed":["Crypto"],    "forbidden":["Equities","Bonds","Commodities","Equity","ETF"], "max_w":0.40, "rules":"Crypto uniquement."},
-    "Arbitrage":     {"emoji":"↔️","color":"#94a3b8","allowed":None,          "forbidden":[],                                  "max_w":0.15, "rules":"Delta-neutre. Max 15% par position."},
-}
-
-CATEGORY_MAP = {
-    "Technology":"Equities","Financial Services":"Equities","Healthcare":"Equities",
-    "Consumer Cyclical":"Equities","Consumer Defensive":"Equities","Industrials":"Equities",
-    "Energy":"Equities","Utilities":"Equities","Real Estate":"Equities",
-    "Communication Services":"Equities","Basic Materials":"Equities",
-    "ETF":"ETF","Bond":"Bonds","Bonds":"Bonds","Crypto":"Crypto",
-    "Cryptocurrency":"Crypto","Commodities":"Commodities","Commodity":"Commodities",
-    "Equity":"Equities","Equities":"Equities",
+# Univers proposés dans le sélecteur d'actifs (catégories de data/assets*.csv)
+UNIVERSES = {
+    "Tous": None,
+    "🧺 ETF": ["ETF"],
+    "📈 Actions": ["Equity", "Equities"],
+    "₿ Crypto": ["Crypto"],
+    "🛢️ Matières premières": ["Commodity", "Commodities", "Futures"],
+    "💱 Devises & indices": ["Forex", "Index"],
 }
 
 
 def _validate(asset_row: pd.Series, port_type: str) -> tuple[bool, str]:
-    rules = PORTFOLIO_TYPES.get(port_type, PORTFOLIO_TYPES["Libre"])
-    if rules["allowed"] is None and not rules["forbidden"]:
-        return True, f"✅ Autorisé ({port_type})"
-    cat = CATEGORY_MAP.get(str(asset_row.get("category","Equities")), "Equities")
-    if cat in rules["forbidden"]:
-        return False, f"❌ '{cat}' interdit pour {port_type}"
-    if rules["allowed"] and cat not in rules["allowed"]:
-        return False, f"❌ '{cat}' non autorisé pour {port_type}"
-    return True, f"✅ '{cat}' conforme à {port_type}"
+    return validate_mandate(str(asset_row.get("category", "Equities")), port_type)
 
 
 def _pnl_col(v): return "#00ff88" if v > 0 else ("#ff3b6b" if v < 0 else "#94a3b8")
@@ -97,14 +82,11 @@ def render():
     if not port:
         st.error(f"Portefeuille {port_id} introuvable."); return
 
+    # ── Profil investisseur (adéquation / caractère approprié) ────────────────
+    render_profile_panel()
+
     # ── Sélecteur de stratégie ────────────────────────────────────────────────
-    current_type = port.get("portfolio_type", port.get("strategy", "Libre"))
-    # Normalise ancien format
-    _strat_map = {"growth":"Growth","value":"Value","momentum":"Momentum","income":"Income",
-                  "macro":"Global Macro","hedging":"Hedging","balanced":"Balanced 60/40",
-                  "commodity":"Commodity","crypto":"Crypto Alpha","arbitrage":"Arbitrage"}
-    if current_type in _strat_map:
-        current_type = _strat_map[current_type]
+    current_type = normalize_port_type(port)
 
     type_list = list(PORTFOLIO_TYPES.keys())
     col_t, col_info = st.columns([1, 2])
@@ -131,7 +113,11 @@ def render():
         "📋 MES POSITIONS & PERFORMANCE",
     ])
     with tab_spot: _spot_desk(port, state, team_id, port_id, assets_df, new_type)
-    with tab_opt:  _options_desk(port, state, team_id, port_id, assets_df)
+    with tab_opt:
+        render_risk_banner("options")
+        sub_single, sub_strat = st.tabs(["⚙️ OPTION SIMPLE", "🎯 STRATÉGIES SELON LE MARCHÉ"])
+        with sub_single: _options_desk(port, state, team_id, port_id, assets_df)
+        with sub_strat:  _strategy_desk(port, assets_df)
     with tab_pos:  _positions_tab(port, assets_df)
 
 
@@ -139,17 +125,98 @@ def render():
 #  SPOT TRADING
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _etf_card(ticker: str):
+    """Fiche synthétique d'un ETF (frais, UCITS, PEA, zone)."""
+    try:
+        from utils.etf_universe import etf_meta, etf_class
+    except Exception:
+        return
+    meta = etf_meta(ticker)
+    cls = etf_class(ticker)
+    if not meta and not cls:
+        return
+    if meta:
+        body = (f'<b style="color:#e2e8f0;">{meta.get("name", ticker)}</b><br>'
+                f'{meta.get("description", "")}<br>'
+                f'Classe : <b>{cls}</b> · Zone : <b>{meta.get("zone", "—")}</b><br>'
+                f'Frais courants (TER) : <b style="color:#ffd700;">{float(meta.get("ter_pct", 0)):.2f} %/an</b> · '
+                f'UCITS : <b>{meta.get("ucits", "—")}</b> · PEA : <b>{meta.get("pea", "—")}</b> · '
+                f'Diversifié : <b>{meta.get("diversifie", "—")}</b>')
+    else:
+        body = f'ETF · classe de risque : <b>{cls}</b>'
+    st.markdown(
+        f'<div style="border-left:3px solid #00d4ff;background:rgba(0,212,255,.05);border-radius:4px;'
+        f'padding:8px 12px;font-family:Share Tech Mono;font-size:.7rem;color:#94a3b8;line-height:1.7;margin:6px 0;">'
+        f'🧺 {body}<br><span style="color:#475569;font-size:.64rem;">Frais indicatifs : vérifiez le DIC (document '
+        f'd\'informations clés) du fonds.</span></div>', unsafe_allow_html=True)
+
+
+def _etf_models(port, port_type):
+    """Portefeuilles modèles 100 % ETF pour petits investisseurs, avec contrôle de conformité."""
+    from utils.etf_universe import ETF_MODELS, model_summary, model_ter
+    from utils.auto_portfolio import plan_orders, execute_orders
+
+    with st.expander("🧺 PORTEFEUILLES MODÈLES 100 % ETF — pour investir simplement et à moindre coût"):
+        st.caption("Pour les investisseurs qui préfèrent ne pas choisir des actions une à une : quelques ETF "
+                   "indiciels larges suffisent à diversifier sur des milliers d'entreprises, avec des frais "
+                   "réduits. Chaque modèle respecte les limites du profil indiqué.")
+        name = st.selectbox("Modèle", list(ETF_MODELS), key="etf_model_sel")
+        model = ETF_MODELS[name]
+        prof = get_profile()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Profil cible", model["profil"])
+        c2.metric("Frais moyens (TER)", f"{model_ter(name):.2%}/an")
+        c3.metric("Nombre de lignes", len(model["poids"]))
+        st.markdown(f"_{model['idee']}_")
+        df = model_summary(name)
+        st.dataframe(df.style.format({"Poids": "{:.0%}", "Frais (TER)": "{:.2%}"}),
+                     use_container_width=True, hide_index=True)
+        if model["profil"] != prof["risque"]:
+            st.warning(f"Ce modèle vise un profil **{model['profil']}** ; votre profil est **{prof['risque']}**. "
+                       "Les contrôles de conformité peuvent bloquer une partie des ordres.")
+        if port_type not in ("Libre", "ETF Core", "Global Macro"):
+            st.info(f"Le mandat « {port_type} » peut interdire certaines classes (obligations, or…). "
+                    "Choisissez la stratégie « 🧺 ETF Core » ou « Libre » pour appliquer un modèle complet.")
+        pct = st.slider("Part du cash à investir", 0.1, 1.0, 0.9, 0.05, key="etf_model_pct")
+        w = pd.Series(model["poids"], dtype=float)
+        live = get_multi_prices(tuple(sorted(set(w.index) | set(port.get("holdings", {}).keys()))))
+        orders = plan_orders(port, w, live, pct, "cash", cash_proxy="__none__")
+        if orders.empty:
+            st.info("Aucun ordre à passer (cash insuffisant).")
+            return
+        st.dataframe(orders.style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
+                     use_container_width=True, hide_index=True)
+        ok = st.checkbox("Je confirme l'exécution simulée de ces ordres (chacun est contrôlé par la conformité)",
+                         key="etf_model_ok")
+        if st.button("🧺 INVESTIR DANS CE MODÈLE", disabled=not ok, key="etf_model_go", use_container_width=True):
+            errs = execute_orders(port, orders, tag=f"modèle ETF {name}")
+            persist()
+            if errs:
+                st.warning("Ordres partiellement exécutés :\n\n- " + "\n- ".join(errs))
+            else:
+                st.success(f"✅ {len(orders)} ordres exécutés — modèle « {name} ».")
+
+
 def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
     section_title("ORDRE SPOT", "📈")
+    _etf_models(port, port_type)
     col_l, col_r = st.columns([1, 1])
 
     with col_l:
+        univ = st.radio("Univers", list(UNIVERSES), horizontal=True, key="spot_universe")
+        cats = UNIVERSES[univ]
+        df_u = assets_df if not cats or "category" not in assets_df.columns \
+            else assets_df[assets_df["category"].isin(cats)]
+        if df_u.empty:
+            df_u = assets_df
         ticker_opts = {f'{r["ticker"]} — {r.get("name",r["ticker"])}': r["ticker"]
-                       for _, r in assets_df.iterrows()}
+                       for _, r in df_u.iterrows()}
         sel    = st.selectbox("Actif", list(ticker_opts.keys()), key="spot_asset")
         ticker = ticker_opts[sel]
         a_row  = assets_df[assets_df["ticker"]==ticker]
         a_s    = a_row.iloc[0] if not a_row.empty else pd.Series({"category":"Equities"})
+        if str(a_s.get("category", "")) == "ETF":
+            _etf_card(ticker)
 
         is_valid, valid_msg = _validate(a_s, port_type)
         vc = "#00ff88" if is_valid else "#ff3b6b"
@@ -211,20 +278,11 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
             f'Valeur ordre : <b style="color:#ffd700;">${total_order:,.2f}</b>'
             f'</div></div>', unsafe_allow_html=True)
 
-        errors = []
-        if not is_valid and is_buy:
-            errors.append(f"❌ Actif incompatible avec la stratégie {port_type}")
-        if is_buy and total_order > cash + 0.01:
-            errors.append(f"❌ Fonds insuffisants")
-        if not is_buy and qty > pos_qty + 1e-6:
-            errors.append(f"❌ Position insuffisante ({pos_qty:,.4f} dispo)")
-        if qty <= 0:
-            errors.append("❌ Quantité invalide")
-
-        for e in errors:
-            st.markdown(f'<div style="background:rgba(255,59,107,.1);border:1px solid rgba(255,59,107,.3);'
-                        f'border-radius:4px;padding:8px 12px;font-family:Share Tech Mono;font-size:.75rem;'
-                        f'color:#ff3b6b;margin:3px 0;">{e}</div>', unsafe_allow_html=True)
+        # Contrôles de conformité pré-négociation (mêmes contrôles qu'à l'exécution)
+        decision = pre_trade_spot(port, ticker, "BUY" if is_buy else "SELL", qty, price,
+                                  category=str(a_s.get("category", "Equity")))
+        render_decision(decision)
+        errors = [c for c in decision.blocks]
 
         btn_c = "#00ff88" if is_buy else "#ff3b6b"
         st.markdown(
@@ -237,7 +295,7 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
 
         if st.button(f'{"✅ ACHETER" if is_buy else "🔴 VENDRE"} {qty:,.4f} × {ticker}',
                      disabled=bool(errors), key="spot_exec", type="primary" if not errors else "secondary"):
-            err = record_trade(port, ticker, "BUY" if is_buy else "SELL", qty, price)
+            err = record_trade(port, ticker, "BUY" if is_buy else "SELL", qty, price, source="Trading Desk")
             if err: st.error(err)
             else:
                 st.success(f"✅ {'Achat' if is_buy else 'Vente'} : {qty:,.4f} × {ticker} @ ${price:,.4f}")
@@ -383,19 +441,26 @@ def _options_desk(port, state, team_id, port_id, assets_df):
             f'Cash dispo : <span style="color:#00d4ff;">${cash:,.2f}</span>'
             f'</div>', unsafe_allow_html=True)
 
-    opt_errors = []
-    if is_buy_opt and total_premium > cash + 0.01:
-        opt_errors.append(f"❌ Fonds insuffisants (besoin ${total_premium:,.2f}, cash ${cash:,.2f})")
-
-    for e in opt_errors:
-        st.markdown(f'<div style="background:rgba(255,59,107,.1);border:1px solid rgba(255,59,107,.3);'
-                    f'border-radius:4px;padding:8px 12px;font-family:Share Tech Mono;font-size:.75rem;'
-                    f'color:#ff3b6b;margin:3px 0;">{e}</div>', unsafe_allow_html=True)
+    # Contrôles de conformité « produits complexes » (vente non couverte, profil, budget…)
+    legs = [{"type": opt_type, "qty": n_contracts if is_buy_opt else -n_contracts,
+             "K": float(K), "premium": float(premium)}]
+    decision, _an = pre_trade_options(port, ticker, legs, spot=spot, mult=mult, T_days=T_days,
+                                      r=r_rate, sigma=sigma)
+    render_decision(decision)
+    opt_errors = decision.blocks
 
     if st.button(
         f'{"✅ ACHETER" if is_buy_opt else "🔴 VENDRE"} {n_contracts} × {opt_type.upper()} K=${K:.2f} — ${total_premium:,.2f}',
         disabled=bool(opt_errors), key="opt_submit", type="primary"
     ):
+        decision, _an = pre_trade_options(port, ticker, legs, spot=spot, mult=mult, T_days=T_days,
+                                          r=r_rate, sigma=sigma)
+        log_decision(decision, port, f"{ticker} {opt_type.upper()} K={K:.2f}",
+                     "BUY OPTION" if is_buy_opt else "SELL OPTION", n_contracts, premium,
+                     executed=decision.allowed, note="Option simple")
+        if not decision.allowed:
+            st.error("⛔ Ordre bloqué par la conformité : " + decision.short_reason())
+            return
         port.setdefault("options", []).append({
             "date":          datetime.now().strftime("%Y-%m-%d %H:%M"),
             "ticker":        ticker,
@@ -421,6 +486,282 @@ def _options_desk(port, state, team_id, port_id, assets_df):
         persist()
         st.success(f"✅ Option enregistrée : {n_contracts}× {opt_type.upper()} K=${K:.2f} sur {ticker}")
         st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  STRATÉGIES D'OPTIONS SELON LE RÉGIME DE MARCHÉ
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _strategy_desk(port, assets_df):
+    from utils.option_strategies import (
+        CATALOG, REGIMES, LEVEL_LABEL, recommend, quick_regime, build_legs, usage_level,
+    )
+    from utils.compliance import OPTION_RANK
+
+    section_title("STRATÉGIES D'OPTIONS SELON LES CONDITIONS DE MARCHÉ", "🎯")
+    prof = get_profile()
+    allowed_level = HARD_LIMITS[prof["risque"]]["options"]
+
+    # ── 1. Régime de marché ───────────────────────────────────────────────────
+    if "strat_regime" not in st.session_state:
+        with st.spinner("Lecture des conditions de marché (S&P 500, VIX)…"):
+            st.session_state["strat_regime"] = quick_regime()
+    rg = st.session_state["strat_regime"]
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        col = "#00ff88" if rg["ok"] else "#ffd700"
+        st.markdown(
+            f'<div style="border-left:3px solid {col};background:rgba(0,0,0,.25);border-radius:4px;'
+            f'padding:8px 12px;font-family:Share Tech Mono;font-size:.74rem;color:#cbd5e1;line-height:1.7;">'
+            f'<b style="color:{col};">RÉGIME DÉTECTÉ : {rg["regime"].upper()}</b><br>{rg["explication"]}<br>'
+            f'<span style="color:#475569;font-size:.66rem;">Lecture simplifiée (tendance S&P 500 + VIX). '
+            f'L\'analyse complète à 8 facteurs macro est dans 🦅 Hedge Fund Agent.</span></div>',
+            unsafe_allow_html=True)
+    with c2:
+        regime = st.selectbox("Régime retenu", REGIMES,
+                              index=REGIMES.index(rg["regime"]) if rg["regime"] in REGIMES else 0,
+                              key="strat_regime_sel",
+                              help="Vous pouvez remplacer le régime détecté par votre propre lecture du marché.")
+        if st.button("🔄 Relire le marché", key="strat_regime_refresh", use_container_width=True):
+            st.session_state.pop("strat_regime", None)
+            st.rerun()
+
+    # ── 2. Recommandations ────────────────────────────────────────────────────
+    recs = recommend(regime, rg.get("vix"))
+    st.markdown('<div style="font-family:Rajdhani;font-size:.75rem;color:#7a93b0;letter-spacing:.1em;'
+                'margin:10px 0 4px;">STRATÉGIES ADAPTÉES À CE RÉGIME</div>', unsafe_allow_html=True)
+    if recs and recs[0].get("vol"):
+        st.caption("📊 " + recs[0]["vol"])
+    cols = st.columns(len(recs)) if recs else []
+    for col, r in zip(cols, recs):
+        spec = CATALOG[r["nom"]]
+        ok_lvl = OPTION_RANK[spec["niveau"]] <= OPTION_RANK[allowed_level]
+        badge = ("✅ autorisée pour votre profil" if ok_lvl else f"🔒 non autorisée (profil {prof['risque']})")
+        bc = "#00ff88" if ok_lvl else "#ff3b6b"
+        col.markdown(
+            f'<div style="border:1px solid rgba(124,58,237,.3);background:rgba(124,58,237,.06);border-radius:8px;'
+            f'padding:10px 12px;font-family:Share Tech Mono;font-size:.7rem;color:#94a3b8;line-height:1.6;min-height:170px;">'
+            f'<b style="color:#e2e8f0;font-size:.8rem;">{r["nom"]}</b><br>'
+            f'<span style="color:#7c3aed;">{spec["vue"]}</span><br>{r["raison"]}<br>'
+            f'<span style="color:{bc};font-size:.66rem;">{badge}</span></div>', unsafe_allow_html=True)
+
+    # ── 3. Construction ───────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_title("CONSTRUIRE ET ANALYSER LA STRATÉGIE", "🧩")
+    names = [r["nom"] for r in recs] + [n for n in CATALOG if n not in [r["nom"] for r in recs]]
+    if "category" in assets_df.columns:
+        und = assets_df[assets_df["category"].isin(["Equity", "Equities", "ETF"])]
+    else:
+        und = assets_df
+    held = [t for t in port.get("holdings", {}) if t in set(und["ticker"])]
+    und_opts = held + [t for t in und["ticker"] if t not in held]
+
+    cl, cr = st.columns([1, 1])
+    with cl:
+        name = st.selectbox("Stratégie", names, key="strat_name")
+        spec = CATALOG[name]
+        ticker = st.selectbox("Sous-jacent (titres détenus en premier)", und_opts, key="strat_und",
+                              format_func=lambda t: f"{t} {'· détenu' if t in held else ''}")
+        spot = get_price(ticker)
+        mult = get_contract_mult(ticker)
+        T_days = st.slider("Échéance (jours)", 7, 365, 45, key="strat_T")
+        _v = rg.get("vix")
+        _sig0 = float(min(80.0, max(10.0, _v))) if isinstance(_v, (int, float)) and math.isfinite(_v) else 20.0
+        sigma = st.slider("Volatilité implicite (%)", 5.0, 120.0, _sig0, 0.5, key="strat_sig",
+                          help="Par défaut : niveau du VIX (volatilité implicite du S&P 500).") / 100
+        r_rate = st.slider("Taux sans risque (%)", 0.0, 10.0, 4.0, 0.1, key="strat_r") / 100
+        n = st.number_input(f"Nombre de contrats (×{mult} titres)", 1, 100, 1, key="strat_n")
+        holding = float(port.get("holdings", {}).get(ticker, {}).get("qty", 0.0))
+        with_stock = False
+        if spec["stock"]:
+            need = spec["stock"] * n * mult
+            if holding >= need:
+                st.caption(f"✅ Vous détenez {holding:,.0f} titres {ticker} : la stratégie s'appuie sur ces titres.")
+            else:
+                with_stock = st.checkbox(
+                    f"Acheter aussi {need - holding:,.0f} titres {ticker} (≈ ${(need - holding) * spot:,.0f}) "
+                    f"pour couvrir la stratégie", value=True, key="strat_buy_stock")
+    T = T_days / 365.0
+    legs = build_legs(name, spot, T, r_rate, sigma, n_contracts=int(n), with_stock=False)
+    if with_stock:
+        legs.insert(0, {"type": "stock", "qty": (spec["stock"] * n * mult - holding) / mult, "entry": spot})
+
+    decision, an = pre_trade_options(port, ticker, legs, spot=spot, mult=mult, T_days=T_days,
+                                     r=r_rate, sigma=sigma)
+    # analyse « économique » incluant les titres déjà détenus pour le profil de gain
+    covered = min(holding, spec["stock"] * n * mult) if spec["stock"] else 0.0
+    view_legs = ([{"type": "stock", "qty": covered / mult, "entry": spot}] if covered else []) + legs
+    from utils.option_strategies import analyze
+    an_view = analyze(view_legs, spot, mult, T, r_rate, sigma)
+
+    with cr:
+        lvl = usage_level(legs, mult, shares_held=holding)
+        net = an["net_premium"]
+        g_txt = "illimité" if an_view["unlimited_gain"] else f"${an_view['max_gain']:,.0f}"
+        l_txt = "illimitée" if an_view["unlimited_loss"] else f"${an_view['max_loss']:,.0f}"
+        be_txt = ", ".join(f"${b:,.2f}" for b in an_view["breakevens"][:3]) or "—"
+        st.markdown(
+            f'<div style="background:rgba(0,0,0,.3);border:1px solid rgba(124,58,237,.3);border-radius:8px;'
+            f'padding:12px 14px;font-family:Share Tech Mono;font-size:.74rem;color:#cbd5e1;line-height:1.8;">'
+            f'<b style="color:#7c3aed;font-size:.85rem;">{name}</b> · {spec["vue"]}<br>'
+            f'Spot {ticker} : <b>${spot:,.2f}</b> · {n} contrat(s) × {mult}<br>'
+            f'Prime nette : <b style="color:{"#00ff88" if net >= 0 else "#ff3b6b"};">'
+            f'{"+" if net >= 0 else "−"}${abs(net):,.2f} ({"crédit encaissé" if net >= 0 else "débit payé"})</b><br>'
+            f'Gain maximal : <b style="color:#00ff88;">{g_txt}</b><br>'
+            f'Perte maximale : <b style="color:#ff3b6b;">{l_txt}</b><br>'
+            f'Point(s) mort(s) : <b>{be_txt}</b><br>'
+            f'Type : <b>{LEVEL_LABEL.get(lvl, lvl)}</b></div>', unsafe_allow_html=True)
+        g = an_view["greeks"]
+        gc = st.columns(5)
+        for c_, (lab, v, f_) in zip(gc, [("Δ", g["delta"], "{:+,.1f}"), ("Γ", g["gamma"], "{:+,.3f}"),
+                                         ("Θ/j", g["theta"], "{:+,.2f}"), ("ν/1%", g["vega"], "{:+,.2f}"),
+                                         ("ρ/1%", g["rho"], "{:+,.2f}")]):
+            c_.metric(lab, f_.format(v))
+        st.caption("Grecques en $ (ou titres pour Δ) pour l'ensemble de la position. "
+                   f"Quand l'utiliser : {spec['quand']} Risque : {spec['risque']}")
+
+    # Diagramme de gain à l'échéance
+    grid, pnl = an_view["grid"], an_view["pnl"]
+    m = (grid >= spot * 0.6) & (grid <= spot * 1.4)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=grid[m], y=np.where(pnl[m] >= 0, pnl[m], 0), fill="tozeroy",
+                             fillcolor="rgba(0,255,136,.1)", line=dict(color="rgba(0,0,0,0)"),
+                             showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=grid[m], y=np.where(pnl[m] < 0, pnl[m], 0), fill="tozeroy",
+                             fillcolor="rgba(255,59,107,.1)", line=dict(color="rgba(0,0,0,0)"),
+                             showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=grid[m], y=pnl[m], mode="lines", line=dict(color="#7c3aed", width=2),
+                             name="P&L à l'échéance", hovertemplate="$%{x:,.2f} → $%{y:,.0f}<extra></extra>"))
+    fig.add_hline(y=0, line_color="rgba(255,255,255,.2)")
+    fig.add_vline(x=spot, line_dash="dot", line_color="#ffd700", annotation_text="Spot",
+                  annotation_font_color="#ffd700")
+    for b in an_view["breakevens"][:3]:
+        fig.add_vline(x=b, line_dash="dash", line_color="#94a3b8")
+    fig.update_layout(**_P, height=260, xaxis=dict(title="Cours du sous-jacent à l'échéance",
+                                                   gridcolor="rgba(255,255,255,.04)"),
+                      yaxis=dict(title="P&L $", gridcolor="rgba(255,255,255,.04)"))
+    st.plotly_chart(fig, use_container_width=True)
+
+    legs_df = pd.DataFrame([{
+        "Jambe": "Titres" if l["type"] == "stock" else l["type"].upper(),
+        "Sens": "Achat" if l["qty"] > 0 else "Vente",
+        "Quantité": abs(l["qty"]) * mult,
+        "Strike": l.get("K", "—"),
+        "Prime/unité": round(l.get("premium", 0.0), 4) if l["type"] != "stock" else "—",
+    } for l in legs])
+    st.dataframe(legs_df, use_container_width=True, hide_index=True)
+
+    # ── 4. Conformité et exécution ────────────────────────────────────────────
+    render_decision(decision)
+    ok = st.checkbox("J'ai compris le profil de gain et de perte de cette stratégie", key="strat_ack")
+    if st.button(f"🎯 EXÉCUTER « {name} » sur {ticker}", disabled=not (ok and decision.allowed),
+                 key="strat_exec", type="primary", use_container_width=True):
+        decision, an = pre_trade_options(port, ticker, legs, spot=spot, mult=mult, T_days=T_days,
+                                         r=r_rate, sigma=sigma)
+        log_decision(decision, port, ticker, f"STRATÉGIE {name}", n, an["net_premium"],
+                     executed=decision.allowed, note="Stratégie d'options")
+        if not decision.allowed:
+            st.error("⛔ Stratégie bloquée par la conformité : " + decision.short_reason())
+            return
+        sid = "S" + uuid.uuid4().hex[:6].upper()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        for l in legs:
+            if l["type"] == "stock" and l["qty"] > 0:
+                err = record_trade(port, ticker, "BUY", l["qty"] * mult, spot, enforce=False,
+                                   source=f"stratégie {name} ({sid})")
+                if err:
+                    st.error(err)
+                    return
+        for l in legs:
+            if l["type"] == "stock":
+                continue
+            buy = l["qty"] > 0
+            k = abs(int(l["qty"]))
+            tot = l["premium"] * k * mult
+            port.setdefault("options", []).append({
+                "date": now, "ticker": ticker, "type": l["type"], "action": "BUY" if buy else "SELL",
+                "strike": round(l["K"], 4), "maturity_days": T_days, "sigma": round(sigma * 100, 2),
+                "n_contracts": k, "contract_mult": mult, "premium": round(l["premium"], 6),
+                "total_premium": round(tot, 2), "spot_at_entry": round(spot, 4),
+                "currency": get_currency(ticker), "strategy": name, "strategy_id": sid,
+            })
+            port["cash"] = port.get("cash", 0) + (-tot if buy else tot)
+        port.setdefault("trades", []).append({
+            "date": now, "ticker": f"{ticker} {name}", "action": "STRATÉGIE OPTIONS",
+            "qty": n, "price": round(an["net_premium"] / max(n * mult, 1), 6),
+            "total": round(an["net_premium"], 2), "source": sid, "conformite": "contrôlé",
+        })
+        persist()
+        st.success(f"✅ Stratégie « {name} » exécutée sur {ticker} ({sid}).")
+        st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  EXPOSITION & CONFORMITÉ (sous-onglet des positions)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _exposure_panel(port, live, total_val):
+    from utils.advisor import classify_ticker
+    prof = get_profile()
+    lim = HARD_LIMITS[prof["risque"]]
+    holdings = port.get("holdings", {})
+    cash = port.get("cash", 0.0)
+    if total_val <= 0:
+        st.info("Portefeuille vide.")
+        return
+    rows = []
+    for tk, pos in holdings.items():
+        val = pos.get("qty", 0) * live.get(tk, (pos.get("avg_price", 0), 0))[0]
+        rows.append({"Ligne": tk, "Classe": classify_ticker(tk) or "Autre", "Valeur": val})
+    rows.append({"Ligne": "Liquidités", "Classe": "Liquidités", "Valeur": cash})
+    df = pd.DataFrame(rows)
+    df["Poids"] = df["Valeur"] / total_val
+    by_cls = df.groupby("Classe")["Valeur"].sum().sort_values(ascending=False) / total_val
+
+    c1, c2 = st.columns(2)
+    with c1:
+        section_title("EXPOSITION PAR CLASSE D'ACTIFS", "🧭")
+        fig = go.Figure(go.Bar(x=by_cls.values * 100, y=by_cls.index, orientation="h",
+                               marker_color="#00d4ff", text=[f"{v:.1%}" for v in by_cls.values],
+                               textposition="outside"))
+        fig.update_layout(**_P, height=max(180, 32 * len(by_cls)),
+                          xaxis=dict(title="% de l'actif net", gridcolor="rgba(255,255,255,.04)"),
+                          yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        section_title(f"LIMITES DU PROFIL {prof['risque'].upper()}", "🛡️")
+        crypto = df[df["Classe"] == "Crypto"]["Poids"].sum()
+        cash_w = df[df["Classe"] == "Liquidités"]["Poids"].sum()
+        top = df[df["Ligne"] != "Liquidités"].sort_values("Poids", ascending=False).head(1)
+        top_txt = f'{top["Ligne"].iloc[0]} {top["Poids"].iloc[0]:.1%}' if not top.empty else "—"
+        opts_paid = sum(o.get("total_premium", 0) for o in port.get("options", []) if o.get("action") == "BUY")
+        checks = [
+            ("Plus grosse ligne", top_txt, f"≤ {lim['line']:.0%} (ETF diversifié ≤ 70 %)",
+             top.empty or top["Poids"].iloc[0] <= max(lim["line"], 0.70)),
+            ("Crypto-actifs", f"{crypto:.1%}", f"≤ {lim['crypto']:.0%}", crypto <= lim["crypto"] + 1e-9
+             or normalize_port_type(port) == "Crypto Alpha"),
+            ("Liquidités (dont monétaire)", f"{cash_w:.1%}", f"≥ {lim['cash_min']:.0%}", cash_w >= lim["cash_min"] - 1e-9),
+            ("Primes d'options payées", f"{opts_paid / total_val:.1%}", f"≤ {lim['premium']:.0%}",
+             opts_paid / total_val <= lim["premium"] + 1e-9),
+        ]
+        for lab, val, rule, ok in checks:
+            colr = "#00ff88" if ok else "#ffd700"
+            st.markdown(f'<div style="font-family:Share Tech Mono;font-size:.74rem;color:#cbd5e1;'
+                        f'border-left:3px solid {colr};padding:4px 10px;margin:4px 0;">'
+                        f'{"✅" if ok else "⚠️"} {lab} : <b>{val}</b> <span style="color:#475569;">({rule})</span></div>',
+                        unsafe_allow_html=True)
+        st.caption("Les limites bloquent les nouveaux achats ; une position existante qui dépasse une limite "
+                   "(après une hausse de cours) est signalée ici mais n'est pas vendue automatiquement.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_title("JOURNAL DE CONFORMITÉ (MES DERNIÈRES DÉCISIONS)", "📜")
+    log = recent_log(50)
+    if log:
+        st.dataframe(pd.DataFrame(log), use_container_width=True, hide_index=True, height=260)
+    else:
+        st.info("Aucune décision enregistrée pour l'instant.")
+    with st.expander("📘 Règles de conformité et limites par profil"):
+        render_rules_reference()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -486,11 +827,15 @@ def _positions_tab(port, assets_df):
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── TAB interne : Holdings / Options / Historique ─────────────────────────
-    sub_hold, sub_opt, sub_hist = st.tabs([
+    sub_hold, sub_opt, sub_hist, sub_cmp = st.tabs([
         f"📊 HOLDINGS ({len(holdings)} position{'s' if len(holdings)!=1 else ''})",
         f"⚙️ OPTIONS ({len(options)} position{'s' if len(options)!=1 else ''})",
         f"🔄 HISTORIQUE ({len(trades)} trade{'s' if len(trades)!=1 else ''})",
+        "🛡️ EXPOSITION & CONFORMITÉ",
     ])
+
+    with sub_cmp:
+        _exposure_panel(port, live, total_val)
 
     # ── HOLDINGS ──────────────────────────────────────────────────────────────
     with sub_hold:

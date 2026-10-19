@@ -70,31 +70,47 @@ _FB_PCT: dict[str,float] = {
 
 # ── Price fetching ─────────────────────────────────────────────────────────────
 
+PRICE_LIVE = "live"        # cours Yahoo Finance (différé)
+PRICE_FALLBACK = "repli"   # prix de secours codé en dur : jamais utilisé pour exécuter un ordre
+
+
 @st.cache_data(ttl=180, show_spinner=False)
+def get_quote(ticker: str) -> tuple[float, float, str]:
+    """(prix, variation % vs clôture précédente, source). source = 'live' ou 'repli'."""
+    if _YF:
+        try:
+            info  = yf.Ticker(ticker).fast_info
+            price = float(info.last_price)
+            if math.isnan(price) or price <= 0:
+                raise ValueError
+            try:
+                prev = float(info.previous_close)
+            except Exception:
+                prev = float("nan")
+            pct = (price - prev) / prev * 100 if prev and prev == prev and prev > 0 else 0.0
+            return price, pct, PRICE_LIVE
+        except Exception:
+            pass
+    return _FB.get(ticker, 100.0), _FB_PCT.get(ticker, 0.0), PRICE_FALLBACK
+
+
 def get_price(ticker: str) -> float:
-    if not _YF: return _FB.get(ticker, 100.0)
-    try:
-        p = float(yf.Ticker(ticker).fast_info.last_price)
-        if math.isnan(p) or p<=0: raise ValueError
-        return p
-    except Exception:
-        return _FB.get(ticker, 100.0)
+    return get_quote(ticker)[0]
 
-@st.cache_data(ttl=180, show_spinner=False)
+
 def get_price_change(ticker: str) -> tuple[float,float]:
-    if not _YF: return _FB.get(ticker,100.0), _FB_PCT.get(ticker,0.0)
-    try:
-        info  = yf.Ticker(ticker).fast_info
-        price = float(info.last_price)
-        prev  = float(info.previous_close)
-        if math.isnan(price) or price<=0: raise ValueError
-        return price, (price-prev)/prev*100 if prev>0 else 0.0
-    except Exception:
-        return _FB.get(ticker,100.0), _FB_PCT.get(ticker,0.0)
+    p, pct, _ = get_quote(ticker)
+    return p, pct
+
+
+def get_price_source(ticker: str) -> str:
+    """'live' si le cours vient de Yahoo Finance, 'repli' si c'est un prix de secours."""
+    return get_quote(ticker)[2]
+
 
 @st.cache_data(ttl=180, show_spinner=False)
-def get_multi_prices(tickers: tuple) -> dict[str,tuple[float,float]]:
-    result: dict[str,tuple[float,float]] = {}
+def _multi_quotes(tickers: tuple) -> dict[str, tuple[float, float, str]]:
+    result: dict[str, tuple[float, float, str]] = {}
     if not tickers: return result
     if _YF:
         try:
@@ -109,14 +125,41 @@ def get_multi_prices(tickers: tuple) -> dict[str,tuple[float,float]]:
                         s = closes[t].dropna()
                         if len(s)>=2:
                             p,prv = float(s.iloc[-1]),float(s.iloc[-2])
-                            result[t] = (p,(p-prv)/prv*100 if prv else 0.0)
+                            result[t] = (p,(p-prv)/prv*100 if prv else 0.0, PRICE_LIVE)
                         elif len(s)==1:
-                            result[t] = (float(s.iloc[-1]),0.0)
+                            result[t] = (float(s.iloc[-1]),0.0, PRICE_LIVE)
         except Exception: pass
     for t in tickers:
         if t not in result:
-            result[t] = (_FB.get(t,100.0), _FB_PCT.get(t,0.0))
+            result[t] = (_FB.get(t,100.0), _FB_PCT.get(t,0.0), PRICE_FALLBACK)
     return result
+
+
+def get_multi_prices(tickers: tuple) -> dict[str,tuple[float,float]]:
+    return {t: (p, pct) for t, (p, pct, _) in _multi_quotes(tuple(tickers)).items()}
+
+
+def get_multi_sources(tickers: tuple) -> dict[str, str]:
+    """Source du cours de chaque ticker ('live' / 'repli')."""
+    return {t: src for t, (_, _, src) in _multi_quotes(tuple(tickers)).items()}
+
+
+# Compatibilité : le bouton 🔄 du Dashboard appelle get_multi_prices.clear() / get_price_change.clear()
+def _clear_quotes():
+    get_quote.clear()
+    _multi_quotes.clear()
+    market_data_status.clear()
+
+
+get_price.clear = _clear_quotes
+get_price_change.clear = _clear_quotes
+get_multi_prices.clear = _clear_quotes
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def market_data_status() -> str:
+    """'live' si Yahoo Finance répond (test sur le S&P 500), sinon 'repli'."""
+    return get_quote("SPY")[2]
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_history(ticker: str, period: str="1y") -> pd.DataFrame:
@@ -226,14 +269,14 @@ def fetch_news_headlines(max_items: int=20) -> list[dict]:
     return out[:max_items]
 
 def _static_news() -> list[dict]:
+    """Repli quand le flux d'actualités est indisponible : messages d'information
+    de la plateforme (aucune fausse actualité datée présentée comme réelle)."""
     return [
-        {"title":"Federal Reserve holds rates at 4.25-4.50%","category":"Central Banks","link":""},
-        {"title":"S&P 500 hits all-time high on AI earnings beat","category":"Markets","link":""},
-        {"title":"ECB signals rate cut as Eurozone inflation falls","category":"Central Banks","link":""},
-        {"title":"Gold surges on geopolitical tensions","category":"Commodities","link":""},
-        {"title":"Bitcoin ETF inflows hit weekly record","category":"Crypto","link":""},
-        {"title":"OPEC+ maintains production cuts through Q3","category":"Commodities","link":""},
-        {"title":"IMF revises global growth forecast to 3.4%","category":"Markets","link":""},
+        {"title":"Flux d'actualités momentanément indisponible — réessayez dans quelques minutes","category":"Info","link":""},
+        {"title":"Cours Yahoo Finance différés : vérifiez l'indicateur de données en haut de page","category":"Info","link":""},
+        {"title":"Contrôles de conformité actifs sur chaque ordre : concentration, crypto, liquidités, dérivés","category":"Conformité","link":""},
+        {"title":"Plateforme éducative : aucun ordre n'est exécuté sur un marché réel","category":"Info","link":""},
+        {"title":"Les performances passées ne préjugent pas des performances futures","category":"Info","link":""},
     ]
 
 
@@ -467,7 +510,23 @@ compute_portfolio_metrics = compute_risk_metrics
 
 
 def record_trade(portfolio: dict, ticker: str, action: str,
-                 qty: float, price: float) -> str:
+                 qty: float, price: float, enforce: bool = True, source: str = "") -> str:
+    """Exécute un ordre spot simulé. Avec enforce=True (par défaut), l'ordre passe
+    d'abord par les contrôles de conformité (utils.compliance) : s'il est bloqué,
+    rien n'est exécuté et le message explique la règle en cause."""
+    decision = None
+    if enforce:
+        try:
+            from utils.compliance import pre_trade_spot, log_decision
+            decision = pre_trade_spot(portfolio, ticker, action, qty, price)
+        except Exception as e:  # par prudence, un contrôle en erreur bloque l'ordre
+            return f"⛔ Contrôle de conformité indisponible ({e}) : ordre refusé par prudence."
+        if not decision.allowed:
+            try:
+                log_decision(decision, portfolio, ticker, action, qty, price, executed=False, note=source)
+            except Exception:
+                pass
+            return "⛔ Ordre bloqué par la conformité : " + decision.short_reason()
     total=qty*price; h=portfolio.setdefault("holdings",{}); tr=portfolio.setdefault("trades",[])
     if action=="BUY":
         if total>portfolio.get("cash",0)+0.01:
@@ -485,9 +544,19 @@ def record_trade(portfolio: dict, ticker: str, action: str,
         h[ticker]["qty"]-=qty
         if h[ticker]["qty"]<1e-9: del h[ticker]
     else: return f"Action invalide: {action}"
-    tr.append({"date":datetime.now().strftime("%Y-%m-%d %H:%M"),
-               "ticker":ticker,"action":action,
-               "qty":round(qty,6),"price":round(price,6),"total":round(total,2)})
+    entry = {"date":datetime.now().strftime("%Y-%m-%d %H:%M"),
+             "ticker":ticker,"action":action,
+             "qty":round(qty,6),"price":round(price,6),"total":round(total,2)}
+    if source:
+        entry["source"] = source
+    if decision is not None:
+        entry["conformite"] = "contrôlé" + (f" ({len(decision.warnings)} alerte(s))" if decision.warnings else "")
+        try:
+            from utils.compliance import log_decision
+            log_decision(decision, portfolio, ticker, action, qty, price, executed=True, note=source)
+        except Exception:
+            pass
+    tr.append(entry)
     persist()
     return ""
 

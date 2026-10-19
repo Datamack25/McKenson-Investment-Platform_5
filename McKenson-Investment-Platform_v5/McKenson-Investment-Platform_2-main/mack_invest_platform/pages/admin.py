@@ -7,6 +7,7 @@ Default password: MAM2026
 """
 from __future__ import annotations
 import json
+import uuid
 import csv
 import io
 from datetime import datetime
@@ -127,9 +128,10 @@ def render():
             "```toml\n[admin]\npassword = \"VotreMotDePasseAdmin\"\n```"
         )
 
-    (tab_users, tab_teams, tab_game, tab_assets,
+    (tab_users, tab_cmp, tab_teams, tab_game, tab_assets,
      tab_logs, tab_export, tab_danger) = st.tabs([
         "🔐 UTILISATEURS",
+        "🛡️ CONFORMITÉ",
         "👥 ÉQUIPES & PORTEFEUILLES",
         "🎮 PARAMÈTRES JEU",
         "📋 ACTIFS",
@@ -140,6 +142,8 @@ def render():
 
     with tab_users:
         _users_tab()
+    with tab_cmp:
+        _compliance_tab()
     with tab_teams:
         _teams_tab()
     with tab_game:
@@ -152,6 +156,40 @@ def render():
         _export_tab()
     with tab_danger:
         _danger_tab()
+
+
+# ── Compliance tab ────────────────────────────────────────────────────────────
+def _compliance_tab():
+    """Supervision : décisions de conformité de tous les utilisateurs + règles en vigueur."""
+    from utils.compliance import recent_log, render_rules_reference
+    section_title("JOURNAL D'AUDIT DES CONTRÔLES DE CONFORMITÉ", "🛡️")
+    st.caption("Chaque ordre (Trading Desk, stratégies d'options, Auto-Portefeuille, modèles ETF) est contrôlé "
+               "avant exécution. Ce journal horodaté conserve les ordres exécutés et bloqués, avec les règles en cause.")
+    rows = recent_log(500, all_users=True)
+    if not rows:
+        st.info("Aucune décision enregistrée pour l'instant.")
+    else:
+        df = pd.DataFrame(rows)
+        n_block = int((df.get("statut") == "bloqué").sum()) if "statut" in df else 0
+        metric_row([
+            {"label": "Décisions", "value": str(len(df)), "color": ""},
+            {"label": "Ordres bloqués", "value": str(n_block), "color": "negative" if n_block else ""},
+            {"label": "Taux de blocage", "value": f"{n_block / len(df):.0%}", "color": ""},
+        ])
+        if "regles" in df and n_block:
+            codes = (df.loc[df["statut"] == "bloqué", "regles"].astype(str).str.split(", ")
+                     .explode().value_counts())
+            st.markdown("**Règles les plus souvent déclenchées**")
+            st.dataframe(codes.rename("blocages").to_frame(), use_container_width=True)
+        only_blocked = st.checkbox("Afficher uniquement les ordres bloqués", key="adm_cmp_blocked")
+        view = df[df["statut"] == "bloqué"] if only_blocked and "statut" in df else df
+        st.dataframe(view, use_container_width=True, hide_index=True, height=380)
+        st.download_button("⬇️ Exporter le journal (CSV)",
+                           data=view.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                           file_name=f"mam_journal_conformite_{datetime.now():%Y%m%d}.csv",
+                           mime="text/csv", key="adm_cmp_export")
+    with st.expander("📘 Règles et limites en vigueur"):
+        render_rules_reference()
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -375,11 +413,11 @@ def _teams_tab():
             submitted  = st.form_submit_button("➕ Créer l'équipe", use_container_width=True)
 
         if submitted and team_name:
-            tid = f"T{len(teams)+1:02d}_{team_name[:8].replace(' ','')}"
+            tid = "T" + uuid.uuid4().hex[:6].upper()
             if tid not in teams:
                 portfolios = {}
                 for i in range(n_ports):
-                    pid  = f"P{i+1:02d}"
+                    pid  = "P" + uuid.uuid4().hex[:6].upper()  # identifiant unique (évite les collisions entre utilisateurs)
                     strat = STRATEGIES[i % len(STRATEGIES)]
                     portfolios[pid] = {
                         "name": f"Portfolio {i+1}", "emoji": EMOJIS_PORT[i % len(EMOJIS_PORT)],
@@ -468,7 +506,7 @@ def _teams_tab():
                                                         int(INITIAL_CASH), key=f"pc_{tid}")
                             p_emoji = st.selectbox("Emoji", EMOJIS_PORT, key=f"pe_{tid}")
                             if st.form_submit_button("➕ Ajouter portefeuille"):
-                                new_pid = f"P{len(team['portfolios'])+1:02d}"
+                                new_pid = "P" + uuid.uuid4().hex[:6].upper()
                                 state["teams"][tid]["portfolios"][new_pid] = {
                                     "name": p_name or f"Portfolio {new_pid}",
                                     "emoji": p_emoji, "strategy": p_strat,

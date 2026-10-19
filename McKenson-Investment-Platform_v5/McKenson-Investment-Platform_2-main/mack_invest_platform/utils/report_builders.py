@@ -7,6 +7,7 @@ import pandas as pd
 from utils import reporting as R
 from utils.auto_portfolio import (METHODS, PROFILES, fmt_metric, monte_carlo, perf_metrics,
                                   stress_test)
+import utils.legal as _LEGAL
 from utils.market_intel import asset_class, asset_name
 from utils.ml_engine import FEATURE_FAMILY, FEATURE_LABELS
 
@@ -14,7 +15,7 @@ DISCLAIMER = ("Avertissement : ce document est produit par un outil de simulatio
               "prévisions issues de modèles statistiques et d'apprentissage automatique sont incertaines ; "
               "les performances passées et simulées (backtest) ne préjugent pas des performances futures. "
               "Ce document ne constitue ni un conseil en investissement personnalisé ni une recommandation "
-              "d'achat ou de vente.")
+              "d'achat ou de vente. " + _LEGAL.CREDIT + " " + _LEGAL.DISCLAIMER)
 
 
 def _fmt_pct(v, sign=False):

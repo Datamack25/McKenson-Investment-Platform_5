@@ -390,6 +390,20 @@ def _tab_apply(ctx):
     if orders.empty:
         st.info("Aucun ordre nécessaire (cash insuffisant ou portefeuille déjà aligné).")
         return
+    # Aperçu des contrôles de conformité (chaque ordre est re-contrôlé à l'exécution)
+    try:
+        from utils.compliance import pre_trade_spot, get_profile
+        verdicts = []
+        for _, o in orders.iterrows():
+            dec = pre_trade_spot(port, o["ticker"], o["action"], float(o["qty"]), float(o["price"]))
+            verdicts.append("✅ conforme" if dec.allowed else
+                            "⛔ " + ", ".join(f"[{c.code}] {c.title}" for c in dec.blocks))
+        orders = orders.assign(conformité=verdicts)
+        st.caption(f"🛡️ Contrôles de conformité selon votre profil **{get_profile()['risque']}** "
+                   "(détail des règles : Trading Desk → Mes positions → Exposition & conformité). "
+                   "Les ordres bloqués ne seront pas exécutés.")
+    except Exception:
+        pass
     st.dataframe(orders.style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
                  use_container_width=True, hide_index=True)
     buy, sell = orders.loc[orders.action == "BUY", "montant"].sum(), orders.loc[orders.action == "SELL", "montant"].sum()
@@ -400,7 +414,7 @@ def _tab_apply(ctx):
         st.warning("Le rééquilibrage complet vend les positions spot qui ne font pas partie de l'allocation cible.")
     confirm = st.checkbox("Je confirme l'exécution simulée de ces ordres", key="auto_apply_ok")
     if st.button("🚀 EXÉCUTER LES ORDRES", disabled=not confirm, use_container_width=True, key="auto_apply_go"):
-        errs = execute_orders(port, orders)
+        errs = execute_orders(port, orders.drop(columns=["conformité"], errors="ignore"))
         persist()
         if errs:
             st.warning("Ordres partiellement exécutés : " + "; ".join(errs))

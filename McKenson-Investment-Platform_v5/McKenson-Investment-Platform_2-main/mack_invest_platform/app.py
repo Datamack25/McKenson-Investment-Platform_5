@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="MAM — McKenson Asset Management",
+    page_title="MAM — McKenson Asset Management · v5.1",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -221,19 +221,15 @@ TICKER_SYMBOLS = [
     "NFLX","AMD","INTC","BAC","WMT","XOM","CVX","LLY","UNH","PFE",
 ]
 
+# Repli si le flux d'actualités est indisponible : messages d'information de la
+# plateforme (et non de fausses actualités datées présentées comme réelles).
 NEWS_ITEMS = [
-    ("MACRO","Fed maintient les taux entre 5.25%-5.50%"),
-    ("TECH","NVIDIA dépasse les 1 000 Mds de capitalisation"),
-    ("CRYPTO","Bitcoin teste les 70 000$ — halving en vue"),
-    ("ENERGY","Le pétrole WTI recule sous 80$ le baril"),
-    ("FX","EUR/USD se stabilise autour de 1.085"),
-    ("MACRO","PMI Zone Euro surprend à la hausse à 51.2"),
-    ("TECH","Apple annonce un rachat d'actions de 110 Mds$"),
-    ("BONDS","Le 10 ans US remonte à 4.35%"),
-    ("MACRO","Inflation US CPI à +3.2% sur 12 mois"),
-    ("ASIA","Nikkei franchit 40 000 pts pour la première fois"),
-    ("CRYPTO","ETF Bitcoin Spot approuvé par la SEC"),
-    ("ENERGY","GNL européen : prix en forte baisse ce trimestre"),
+    ("INFO", "Flux d'actualités momentanément indisponible — réessayez dans quelques minutes"),
+    ("INFO", "Cours Yahoo Finance différés — voir l'indicateur de données en haut de page"),
+    ("CONFORMITÉ", "Chaque ordre est contrôlé : concentration, crypto, liquidités, produits dérivés"),
+    ("ETF", "Nouveau : portefeuilles modèles 100 % ETF dans le Trading Desk"),
+    ("OPTIONS", "Nouveau : stratégies d'options selon le régime de marché"),
+    ("MAM", "Plateforme éducative créée par Mackenson CINEUS — aucun ordre réel n'est exécuté"),
 ]
 
 

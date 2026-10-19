@@ -1,16 +1,18 @@
-# utils/db.py — MAM v4.0 Supabase PostgreSQL Backend
+# utils/db.py — MAM v5.1 Supabase PostgreSQL Backend
 """
 Gestion complète de la persistance via Supabase (PostgreSQL).
-- Comptes utilisateurs (login/password hashé)
-- Portefeuilles permanents
+- Comptes utilisateurs (mots de passe hachés bcrypt, migration automatique des
+  anciens hachages SHA-256 à la connexion, verrouillage après 5 échecs)
+- Profil investisseur (questionnaire MiFID II simplifié)
+- Portefeuilles permanents (protégés : un utilisateur ne peut pas écraser
+  le portefeuille d'un autre)
+- Journal d'audit des contrôles de conformité
 - Snapshots de performance automatiques
 - Toutes les tables créées automatiquement au premier démarrage
 
 CONFIGURATION dans .streamlit/secrets.toml :
 [supabase]
-url = "https://iwjbydiuklbceuamxqes.supabase.co"
-anon_key = "eyJhbGci..."
-db_password = "VOTRE_MOT_DE_PASSE_SUPABASE"
+database_url = "postgresql://postgres.<ref>:<MOT_DE_PASSE>@aws-0-<region>.pooler.supabase.com:6543/postgres"
 """
 
 from __future__ import annotations
@@ -22,6 +24,12 @@ import string
 from datetime import datetime
 from typing import Optional
 import streamlit as st
+
+try:
+    import bcrypt as _bcrypt
+    _BCRYPT = True
+except ImportError:  # pragma: no cover — bcrypt est dans requirements.txt
+    _BCRYPT = False
 
 try:
     import psycopg2
@@ -164,6 +172,31 @@ ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMPTZ;
 ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS reset_attempts INTEGER DEFAULT 0;
 ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
 
+-- v5.1 : sécurité des connexions et profil investisseur
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS failed_logins INTEGER DEFAULT 0;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS investor_profile JSONB;
+
+-- v5.1 : journal d'audit des contrôles de conformité (ajout uniquement)
+CREATE TABLE IF NOT EXISTS mam_compliance_log (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES mam_users(id) ON DELETE SET NULL,
+    username TEXT,
+    portfolio_id TEXT,
+    portfolio TEXT,
+    ticker TEXT,
+    action TEXT,
+    qty DOUBLE PRECISION,
+    price DOUBLE PRECISION,
+    statut TEXT,
+    regles TEXT,
+    detail TEXT,
+    checks JSONB,
+    version TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_compliance_user ON mam_compliance_log(user_id, created_at DESC);
+
 -- Index
 CREATE INDEX IF NOT EXISTS idx_users_recovery ON mam_users(recovery_hash);
 CREATE INDEX IF NOT EXISTS idx_portfolios_team ON mam_portfolios(team_id);
@@ -212,9 +245,36 @@ def db_last_error() -> str:
 # AUTHENTIFICATION
 # ══════════════════════════════════════════════════════════════════════════════
 
+_LEGACY_SALT = "mam_eslsca_2026"
+MAX_FAILED_LOGINS = 5
+LOCK_MINUTES = 15
+
+
+def _legacy_hash(password: str) -> str:
+    """Ancien hachage (SHA-256 + sel fixe) — uniquement pour vérifier les comptes
+    créés avant la v5.1, qui sont re-hachés en bcrypt à leur prochaine connexion."""
+    return hashlib.sha256(f"{_LEGACY_SALT}{password}".encode()).hexdigest()
+
+
 def _hash_password(password: str) -> str:
-    salt = "mam_eslsca_2026"
-    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    """Hachage bcrypt (sel aléatoire par mot de passe, coût 12)."""
+    if _BCRYPT:
+        return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt(rounds=12)).decode()
+    return _legacy_hash(password)
+
+
+def _verify_password(password: str, stored: str) -> tuple[bool, bool]:
+    """(mot de passe correct ?, faut-il re-hacher en bcrypt ?)."""
+    stored = stored or ""
+    if stored.startswith("$2"):
+        if not _BCRYPT:
+            return False, False
+        try:
+            return _bcrypt.checkpw(password.encode(), stored.encode()), False
+        except ValueError:
+            return False, False
+    ok = hmac.compare_digest(_legacy_hash(password), stored)
+    return ok, ok and _BCRYPT
 
 
 def create_user(username: str, email: str, password: str, role: str = "student") -> dict:
@@ -249,20 +309,52 @@ def create_user(username: str, email: str, password: str, role: str = "student")
         return {"ok": False, "msg": f"Erreur : {e}"}
 
 
+def login_lock_minutes(username: str) -> int:
+    """Minutes restantes de verrouillage du compte (0 si non verrouillé)."""
+    try:
+        rows = _run(
+            "SELECT CEIL(EXTRACT(EPOCH FROM (locked_until - NOW())) / 60) AS m "
+            "FROM mam_users WHERE username=%s AND locked_until > NOW()",
+            ((username or "").strip().lower(),), fetch=True,
+        )
+        return int(rows[0]["m"]) if rows and rows[0]["m"] else 0
+    except Exception:
+        return 0
+
+
 def login_user(username: str, password: str) -> Optional[dict]:
-    """Vérifie les credentials. Retourne le dict utilisateur ou None."""
+    """Vérifie les identifiants. Retourne le dict utilisateur ou None.
+    Après MAX_FAILED_LOGINS échecs, le compte est verrouillé LOCK_MINUTES minutes."""
+    uname = (username or "").strip().lower()
     rows = _run(
-        "SELECT * FROM mam_users WHERE username=%s AND password_hash=%s",
-        (username.strip().lower(), _hash_password(password)),
-        fetch=True,
+        "SELECT *, (locked_until IS NOT NULL AND locked_until > NOW()) AS is_locked "
+        "FROM mam_users WHERE username=%s",
+        (uname,), fetch=True,
     )
     if not rows:
+        _hash_password(password)  # même temps de réponse que pour un compte existant
         return None
     user = rows[0]
-    _run("UPDATE mam_users SET last_login=NOW() WHERE id=%s", (user["id"],))
-    _log_event(user["id"], username, "login")
+    if user.pop("is_locked", False):
+        _log_event(user["id"], uname, "login_locked")
+        return None
+    ok, rehash = _verify_password(password, user.get("password_hash"))
+    if not ok:
+        _run(
+            "UPDATE mam_users SET failed_logins = COALESCE(failed_logins, 0) + 1, "
+            "locked_until = CASE WHEN COALESCE(failed_logins, 0) + 1 >= %s "
+            "THEN NOW() + (%s * INTERVAL '1 minute') ELSE locked_until END WHERE id=%s",
+            (MAX_FAILED_LOGINS, LOCK_MINUTES, user["id"]),
+        )
+        _log_event(user["id"], uname, "login_failed")
+        return None
+    if rehash:
+        _run("UPDATE mam_users SET password_hash=%s WHERE id=%s", (_hash_password(password), user["id"]))
+    _run("UPDATE mam_users SET last_login=NOW(), failed_logins=0, locked_until=NULL WHERE id=%s",
+         (user["id"],))
+    _log_event(user["id"], uname, "login")
     # On ne garde jamais les empreintes secrètes en session
-    for _k in _SECRET_COLUMNS:
+    for _k in _SECRET_COLUMNS + ("failed_logins", "locked_until"):
         user.pop(_k, None)
     return user
 
@@ -455,28 +547,30 @@ def get_all_teams() -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
-    """Upsert complet d'un portefeuille."""
+    """Upsert complet d'un portefeuille.
+    Un portefeuille existant n'est mis à jour que par son propriétaire
+    (protection contre l'écrasement du portefeuille d'un autre utilisateur)."""
+    strategy = port_data.get("portfolio_type") or port_data.get("strategy", "Libre")
     _run("""
         INSERT INTO mam_portfolios
             (id, team_id, user_id, name, emoji, strategy, asset_types,
              cash, initial_cash, holdings, options, trades, history, updated_at)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
         ON CONFLICT (id) DO UPDATE SET
-            cash=%s, holdings=%s, options=%s, trades=%s, history=%s, updated_at=NOW()
+            name=EXCLUDED.name, emoji=EXCLUDED.emoji, strategy=EXCLUDED.strategy,
+            initial_cash=EXCLUDED.initial_cash,
+            cash=EXCLUDED.cash, holdings=EXCLUDED.holdings, options=EXCLUDED.options,
+            trades=EXCLUDED.trades, history=EXCLUDED.history, updated_at=NOW()
+        WHERE mam_portfolios.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
+           OR mam_portfolios.user_id IS NULL
     """, (
         port_id, team_id, user_id,
         port_data.get("name", ""),
         port_data.get("emoji", "📁"),
-        port_data.get("strategy", "Libre"),
+        strategy,
         json.dumps(port_data.get("asset_types", [])),
         port_data.get("cash", 0),
         port_data.get("initial_cash", 1_000_000),
-        json.dumps(port_data.get("holdings", {})),
-        json.dumps(port_data.get("options", [])),
-        json.dumps(port_data.get("trades", [])),
-        json.dumps(port_data.get("history", [])),
-        # ON CONFLICT values
-        port_data.get("cash", 0),
         json.dumps(port_data.get("holdings", {})),
         json.dumps(port_data.get("options", [])),
         json.dumps(port_data.get("trades", [])),
@@ -570,3 +664,48 @@ def get_auth_log(limit: int = 100) -> list[dict]:
         (limit,),
         fetch=True,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROFIL INVESTISSEUR (v5.1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_investor_profile(user_id: int) -> Optional[dict]:
+    rows = _run("SELECT investor_profile FROM mam_users WHERE id=%s", (user_id,), fetch=True)
+    if not rows or not rows[0]["investor_profile"]:
+        return None
+    p = rows[0]["investor_profile"]
+    return p if isinstance(p, dict) else json.loads(p)
+
+
+def save_investor_profile(user_id: int, profile: dict) -> None:
+    _run("UPDATE mam_users SET investor_profile=%s WHERE id=%s",
+         (json.dumps(profile, default=str), user_id))
+    _log_event(user_id, None, f"profil_{profile.get('risque', '?')}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# JOURNAL D'AUDIT DE CONFORMITÉ (v5.1) — ajout uniquement, jamais de modification
+# ══════════════════════════════════════════════════════════════════════════════
+
+def log_compliance(entry: dict, checks: list[dict]) -> None:
+    _run("""
+        INSERT INTO mam_compliance_log
+            (user_id, username, portfolio_id, portfolio, ticker, action, qty, price,
+             statut, regles, detail, checks, version)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (entry.get("user_id"), entry.get("username"), entry.get("portfolio_id"),
+          entry.get("portfolio"), entry.get("ticker"), entry.get("action"),
+          entry.get("qty"), entry.get("price"), entry.get("statut"), entry.get("regles"),
+          entry.get("detail"), json.dumps(checks, default=str), entry.get("version")))
+
+
+def get_compliance_log(user_id: Optional[int] = None, limit: int = 100) -> list[dict]:
+    """Décisions de conformité les plus récentes (d'un utilisateur, ou de tous si user_id=None)."""
+    cols = ("TO_CHAR(created_at AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD HH24:MI:SS') AS date, "
+            "username, portfolio, ticker, action, qty, price, statut, regles, detail")
+    if user_id is None:
+        return _run(f"SELECT {cols} FROM mam_compliance_log ORDER BY created_at DESC LIMIT %s",
+                    (limit,), fetch=True)
+    return _run(f"SELECT {cols} FROM mam_compliance_log WHERE user_id=%s "
+                f"ORDER BY created_at DESC LIMIT %s", (user_id, limit), fetch=True)

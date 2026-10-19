@@ -212,6 +212,20 @@ def render_topbar():
         f'<span class="mkt-pill {"open" if o else ""}"><i></i>{n} {"OPEN" if o else "CLOSED"}</span>'
         for n, o in _market_status()
     )
+    # Statut du flux de données (cours réels différés ou prix de secours)
+    try:
+        from utils.data import market_data_status
+        live = market_data_status() == "live"
+        pills += (f'<span class="mkt-pill {"open" if live else ""}" title="'
+                  f'{"Cours Yahoo Finance différés" if live else "Yahoo Finance injoignable : ordres bloqués par la conformité"}">'
+                  f'<i></i>DONNÉES {"LIVE (DIFF.)" if live else "DE REPLI"}</span>')
+    except Exception:
+        pass
+    try:
+        from utils.legal import APP_VERSION
+        pills += f'<span class="mkt-pill" title="Version de la plateforme">v{APP_VERSION}</span>'
+    except Exception:
+        pass
     user = st.session_state.get("mam_user")
     uname = _html.escape(user["username"]) if user else "invité"
     st.markdown(
@@ -376,16 +390,18 @@ def render_portfolio_cards(user_ports: dict, max_cards: int = 4):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render_footer():
+    from utils.legal import AUTHOR, AUTHOR_TITLE, APP_VERSION, APP_RELEASE, DISCLAIMER
     year = datetime.now().year
     st.markdown(
         f"""
 <div class="mam-footer">
   <div><div class="fb">MAM</div>
-       McKenson Asset Management<br>Plateforme de simulation d'investissement.</div>
-  <div><h4>Plateforme</h4>Trading Desk · Analyse technique<br>IA Marchés · Auto-Portefeuille IA<br>Optimiseur · Rapports PDF · Classement</div>
+       McKenson Asset Management<br>Plateforme éducative de simulation d'investissement.<br>
+       Créée par <b style="color:#e2e8f0;">{AUTHOR}</b>, {AUTHOR_TITLE}.<br>
+       Version <b style="color:#00d4ff;">{APP_VERSION}</b> · {APP_RELEASE}</div>
+  <div><h4>Plateforme</h4>Trading Desk · ETF · Stratégies d'options<br>IA Marchés · Auto-Portefeuille IA<br>Optimiseur · Rapports PDF · Classement<br>Contrôles de conformité pré-négociation</div>
   <div><h4>Données</h4>Cours : Yahoo Finance (différé) · Actualités : Google News<br>ML : scikit-learn · Options : Black-Scholes<br>Sauvegarde : base PostgreSQL</div>
-  <div class="mam-legal">© {year} McKenson Asset Management — Simulation à but pédagogique.
-  Aucun ordre n'est exécuté sur un marché réel ; les performances passées ne préjugent pas des performances futures.</div>
+  <div class="mam-legal">© {year} {AUTHOR} — McKenson Asset Management — v{APP_VERSION}.<br>{DISCLAIMER}</div>
 </div>""",
         unsafe_allow_html=True,
     )

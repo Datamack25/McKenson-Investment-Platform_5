@@ -42,6 +42,16 @@ _LAST: dict = {"ok": None, "msg": "", "time": ""}
 # CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
 
+
+def _legal_html() -> str:
+    from utils.legal import CREDIT, DISCLAIMER
+    return f"<b>{CREDIT}</b><br>{DISCLAIMER}"
+
+
+def _legal_text() -> str:
+    from utils.legal import CREDIT, DISCLAIMER
+    return f"{CREDIT}\n{DISCLAIMER}"
+
 def get_config() -> dict | None:
     """Lit la section [email] des secrets. None si non configuré."""
     try:
@@ -197,7 +207,8 @@ def _build_email(port: dict, headline: str, lines: list[str]) -> tuple[str, str]
    {positions}
   </div>
   <div style="padding:12px 22px;border-top:1px solid rgba(0,212,255,.1);color:#475569;font-size:10px">
-   Simulation à but pédagogique — aucune opération réelle. Notification envoyée le {datetime.now().strftime("%d/%m/%Y à %H:%M")}.
+   Simulation à but pédagogique — aucune opération réelle. Notification envoyée le {datetime.now().strftime("%d/%m/%Y à %H:%M")}.<br>
+   {_legal_html()}
   </div>
  </div>
 </div>"""
@@ -206,7 +217,7 @@ def _build_email(port: dict, headline: str, lines: list[str]) -> tuple[str, str]
         + "\n".join(f"- {l}" for l in lines)
         + f"\n\nNAV : {_money(val['total'])} | Cash : {_money(val['cash'])} | "
         f"P&L : {sign}{_money(abs(val['pnl']))} ({sign}{abs(val['pnl_pct']):.2f}%)\n"
-        "Simulation à but pédagogique."
+        "Simulation à but pédagogique.\n\n" + _legal_text()
     )
     return html_body, text_body
 

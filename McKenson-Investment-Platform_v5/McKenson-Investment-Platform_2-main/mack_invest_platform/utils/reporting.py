@@ -9,6 +9,8 @@ sombre aux couleurs de la plateforme) et rapports PDF ReportLab :
 """
 from __future__ import annotations
 
+import utils.legal as _LEGAL
+
 import io
 import re
 import zipfile
@@ -356,7 +358,7 @@ def make_pdf(title: str, subtitle: str, blocks: list[tuple]) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.6 * cm, rightMargin=1.6 * cm,
                             topMargin=1.5 * cm, bottomMargin=1.6 * cm, title=title,
-                            author="MAM — McKenson Asset Management")
+                            author=_LEGAL.AUTHOR + " — MAM McKenson Asset Management")
     width = A4[0] - 3.2 * cm
 
     def on_page(c, d):
@@ -365,11 +367,16 @@ def make_pdf(title: str, subtitle: str, blocks: list[tuple]) -> bytes:
         c.rect(0, A4[1] - .55 * cm, A4[0], .55 * cm, fill=1, stroke=0)
         c.setFillColor(colors.HexColor("#00d4ff"))
         c.setFont(bold, 7.5)
-        c.drawString(1.6 * cm, A4[1] - .37 * cm, "MAM · McKenson Asset Management")
+        c.drawString(1.6 * cm, A4[1] - .37 * cm, f"MAM · McKenson Asset Management · v{_LEGAL.APP_VERSION}")
         c.setFillColor(muted)
         c.setFont(reg, 7)
-        c.drawString(1.6 * cm, .8 * cm, "Simulation à but pédagogique — ne constitue pas un conseil en investissement.")
-        c.drawRightString(A4[0] - 1.6 * cm, .8 * cm, f"Page {d.page}")
+        c.setFont(reg, 6.3)
+        c.drawString(1.6 * cm, 1.1 * cm, _LEGAL.CREDIT)
+        c.drawString(1.6 * cm, .8 * cm, "Plateforme purement éducative — ne constitue pas un conseil en investissement.")
+        c.drawString(1.6 * cm, .5 * cm, f"{_LEGAL.AUTHOR} n'est pas responsable des décisions prises "
+                     "ni engagé par les décisions ou conseils de la plateforme.")
+        c.setFont(reg, 7)
+        c.drawRightString(A4[0] - 1.6 * cm, 1.1 * cm, f"Page {d.page}")
         c.restoreState()
 
     story = [Paragraph(_clean(title), S["title"]), Spacer(1, 3), Paragraph(_clean(subtitle), S["sub"]),

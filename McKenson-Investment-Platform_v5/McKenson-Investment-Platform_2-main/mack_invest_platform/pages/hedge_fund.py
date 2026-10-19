@@ -24,8 +24,7 @@ except Exception:
     _PLOTLY = False
 
 CYAN, GREEN, RED, VIOLET, GREY = "#00d4ff", "#00ff88", "#ff3b6b", "#7c3aed", "#94a3b8"
-DISCLAIMER = ("Outil pédagogique d'aide à la décision sur une plateforme de simulation : "
-              "ne constitue pas un conseil en investissement.")
+from utils.legal import DISCLAIMER_SHORT as DISCLAIMER  # auteur, version et non-responsabilité
 
 _CSS = """
 <style>

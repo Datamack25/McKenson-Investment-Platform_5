@@ -1,5 +1,38 @@
-📈 McKenson Investment Platform - MIP
+📈 McKenson Investment Platform - MIP — version 5.1.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
+
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.1.0 (octobre 2026).
+
+> ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
+> rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
+> investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
+> des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
+> plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.1 — ETF, conformité, stratégies d'options, sécurité
+🧺 Univers ETF élargi (data/assets_etf.csv, chargé automatiquement) : ~40 ETF UCITS (IWDA, VWCE, CSPX, EIMI,
+   ETF éligibles PEA, obligations €, monétaire €STR, or physique) et US à bas coût (VOO, VTI, VT, BND…), avec
+   frais (TER), zone, UCITS, PEA ; filtre « Univers » et fiche ETF dans le Trading Desk.
+🧺 Portefeuilles modèles 100 % ETF par profil (Prudent → 100 % actions, PEA, « trois fonds ») exécutables en un
+   clic, avec frais moyens pondérés ; nouvelle stratégie de portefeuille « ETF Core ».
+🛡️ Contrôles de conformité pré-négociation (utils/compliance.py) sur TOUS les ordres (spot, options,
+   stratégies, Auto-Portefeuille, modèles ETF) : qualité des données (C01), instruments sanctionnés (C02),
+   mandat (C03), concentration par ligne (C04), plafond crypto (C05), liquidités minimales (C06),
+   provision / pas de vente à découvert (C07), taille inhabituelle (C08), profil (C09), caractère approprié
+   des produits complexes (O01), usage des dérivés par profil (O02), interdiction des ventes d'options non
+   couvertes (O03), budget de primes (O04), perte maximale couverte (O05), échéance (O06). Chaque blocage est
+   expliqué (règle, raison, référence MiFID II / UCITS / MiCA / RTS 6 / sanctions UE) et journalisé
+   (table mam_compliance_log, onglet Admin → Conformité).
+🧾 Profil investisseur (questionnaire de risque + test de connaissances sur les options, inspiré de MiFID II
+   art. 25) qui fixe les limites appliquées aux ordres.
+🎯 Stratégies d'options selon le régime de marché (utils/option_strategies.py) : lecture du régime
+   (S&P 500 / VIX), stratégies recommandées par régime et niveau de volatilité, construction multi-jambes
+   (put de protection, call couvert, collar, spreads, straddle, iron condor, papillon, put couvert par du cash),
+   gain / perte max, points morts, grecques agrégées, diagramme de P&L, exécution contrôlée.
+🧭 Exposition par classe d'actifs et limites du profil (Trading Desk → Mes positions → Exposition & conformité).
+🔒 Sécurité : mots de passe bcrypt (migration automatique des anciens hachages à la connexion), verrouillage
+   15 min après 5 échecs, portefeuilles protégés contre l'écrasement par un autre utilisateur, identifiants de
+   portefeuilles uniques, indicateur « données live / de repli » dans l'en-tête.
 
 Features
 Public Side
@@ -45,7 +78,7 @@ Options
 European Black-Scholes pricing:
 
 Contract multiplier = 100 for equities/ETFs, 1 for crypto
-No naked shorts — BUY opens, SELL closes only
+No naked shorts — les ventes de calls non couverts sont bloquées par la conformité (règle O03) ; les ventes de puts doivent être couvertes par des liquidités (règle O05)
 Full greeks: Δ, Γ, θ, ν, ρ
 Quick Start
 # Clone
@@ -142,6 +175,7 @@ eslsca_platform/
 ├── requirements.txt
 ├── data/
 │   ├── assets.csv          # All tradeable assets
+│   ├── assets_etf.csv      # Univers ETF v5.1 (frais, UCITS, PEA, classe)
 │   ├── options_positions.csv
 │   ├── market_events.csv   # Events / news
 │   ├── teams.csv
@@ -173,15 +207,22 @@ eslsca_platform/
 │   ├── report_builders.py  # contenu des rapports PDF
 │   ├── technical.py        # RSI, MACD, Bollinger, GARCH
 │   ├── db.py               # Supabase / PostgreSQL (comptes, portefeuilles)
-│   └── notifier.py         # Emails de notification (SMTP)
+│   ├── notifier.py         # Emails de notification (SMTP)
+│   ├── compliance.py       # v5.1 contrôles de conformité pré-négociation, profil investisseur, journal d'audit
+│   ├── option_strategies.py# v5.1 stratégies d'options multi-jambes selon le régime de marché
+│   ├── etf_universe.py     # v5.1 métadonnées ETF et portefeuilles modèles 100 % ETF
+│   └── legal.py            # v5.1 auteur, version, avertissements (source unique)
 └── components/
     ├── ai_shared.py        # chargement en cache du modèle, KPI, en-têtes des pages IA
     ├── ui.py               # CSS theme, ticker strip, news banner
     └── webui.py            # Habillage page web : en-tête, onglets, bandeau compte, footer
 Admin Password
-Default: MIP2026 — change it in the Admin Panel after first login.
+Définir le mot de passe admin dans Streamlit Cloud → Settings → Secrets :
+[admin]
+password = "VotreMotDePasseAdmin"
+(un compte avec role = 'admin' dans mam_users accède aussi directement au panneau).
 
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 McKenson Asset Management — plateforme de simulation pédagogique.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.1.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

@@ -18,10 +18,9 @@ import streamlit as st
 from utils.db import (
     init_db, create_user, login_user, is_db_available, db_last_error,
     recover_with_code, create_email_reset, reset_with_email_code, change_password,
-    RESET_CODE_TTL_MIN,
+    RESET_CODE_TTL_MIN, login_lock_minutes,
 )
-
-APP_NAME = "MAM — McKenson Asset Management"
+from utils.legal import APP_NAME, APP_VERSION, AUTHOR, AUTHOR_TITLE, DISCLAIMER, render_legal_notice
 _MAX_TRIES = 5
 
 
@@ -130,12 +129,14 @@ def _box(kind: str, html: str):
 
 
 def _logo():
-    st.markdown("""
+    st.markdown(f"""
     <div class="auth-logo">
         <div class="title">MAM</div>
-        <div class="sub">McKENSON ASSET MANAGEMENT</div>
+        <div class="sub">McKENSON ASSET MANAGEMENT · v{APP_VERSION}</div>
+        <div class="sub" style="color:#475569;margin-top:4px;">par {AUTHOR}, {AUTHOR_TITLE}</div>
     </div>
     """, unsafe_allow_html=True)
+    render_legal_notice(compact=True)
 
 
 # ── E-mail (optionnel) ─────────────────────────────────────────────────────────
@@ -276,7 +277,12 @@ def render_auth() -> bool:
                     else:
                         _finalize_login(user)
                 else:
-                    _box("err", "❌ Identifiants incorrects.")
+                    lock = login_lock_minutes(username_l)
+                    if lock:
+                        _box("err", f"🔒 Compte verrouillé pendant {lock} min après plusieurs essais "
+                                    "infructueux. Réessayez plus tard ou utilisez « Identifiants oubliés ».")
+                    else:
+                        _box("err", "❌ Identifiants incorrects.")
         st.markdown(
             '<div class="auth-hint">Identifiants oubliés ? Utilise l\'onglet '
             '<b style="color:#00d4ff;">🔑 Identifiants oubliés</b>.</div>',
@@ -295,9 +301,19 @@ def render_auth() -> bool:
             'color:#475569;margin:6px 0 12px;">* Champs obligatoires</div>',
             unsafe_allow_html=True,
         )
+        with st.expander("📄 Avertissement et conditions d'utilisation"):
+            st.markdown(DISCLAIMER)
+            st.caption("Données collectées : nom d'utilisateur, e-mail (connexion, récupération d'accès, "
+                       "notifications), profil investisseur et journal des ordres simulés. Elles servent "
+                       "uniquement au fonctionnement de la plateforme. Pour supprimer votre compte, "
+                       "contactez l'administrateur (droit à l'effacement — RGPD art. 17).")
+        accept = st.checkbox("J'ai lu l'avertissement : la plateforme est éducative et ne constitue pas un "
+                             "conseil en investissement *", key="reg_accept")
         if st.button("✅ Créer mon compte", key="btn_register", use_container_width=True, type="primary"):
             if not all([username_r, email_r, password_r, password_r2]):
                 _box("err", "❌ Remplissez tous les champs.")
+            elif not accept:
+                _box("err", "❌ Cochez la case d'acceptation de l'avertissement.")
             elif password_r != password_r2:
                 _box("err", "❌ Les mots de passe ne correspondent pas.")
             elif "@" not in email_r:

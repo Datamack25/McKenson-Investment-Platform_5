@@ -81,6 +81,11 @@ THEME_READ = {
 }
 
 
+
+def _legal_footer() -> str:
+    from utils.legal import html_footer
+    return html_footer()
+
 def _alert(rule, key, severity, category, direction, title, why, impact, watch, value=None):
     day = datetime.now().strftime("%Y-%m-%d")
     aid = hashlib.md5(f"{rule}|{key}|{day}".encode()).hexdigest()[:16]
@@ -639,4 +644,5 @@ def alerts_email_html(alerts: list, title: str) -> str:
         {''.join(rows)}
         <p style="color:#64748b;font-size:11px;margin-top:18px">Outil pédagogique d'aide à la décision sur une
         plateforme de simulation : ne constitue pas un conseil en investissement.</p>
+        {_legal_footer()}
       </div></body></html>"""

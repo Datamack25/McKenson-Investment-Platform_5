@@ -614,8 +614,19 @@ def execute_orders(port: dict, orders: pd.DataFrame, tag: str = "auto-IA") -> li
     errors = []
     h = port.setdefault("holdings", {})
     tr = port.setdefault("trades", [])
+    try:
+        from utils.compliance import pre_trade_spot, log_decision
+    except Exception as e:  # par prudence, aucun ordre sans contrôle de conformité
+        return [f"Contrôle de conformité indisponible ({e}) : aucun ordre exécuté"]
     for _, o in orders.iterrows():
         t, q, p = o["ticker"], float(o["qty"]), float(o["price"])
+        # Contrôles pré-négociation : chaque ordre est vérifié sur l'état courant du portefeuille
+        dec = pre_trade_spot(port, t, o["action"], q if o["action"] == "BUY" else min(q, h.get(t, {}).get("qty", 0) or q), p)
+        if not dec.allowed:
+            log_decision(dec, port, t, o["action"], q, p, executed=False, note=tag)
+            errors.append(f"{t} bloqué — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks))
+            continue
+        log_decision(dec, port, t, o["action"], q, p, executed=True, note=tag)
         tot = q * p
         if o["action"] == "BUY":
             if tot > port.get("cash", 0) + 0.01:
