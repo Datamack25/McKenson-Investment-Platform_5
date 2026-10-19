@@ -16,6 +16,7 @@ db_password = "VOTRE_MOT_DE_PASSE_SUPABASE"
 from __future__ import annotations
 import json
 import hashlib
+import hmac
 import secrets
 import string
 from datetime import datetime
@@ -156,7 +157,15 @@ CREATE TABLE IF NOT EXISTS mam_auth_log (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Récupération d'identifiants (ajout sans toucher aux comptes existants)
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS reset_code_hash TEXT;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMPTZ;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS reset_attempts INTEGER DEFAULT 0;
+ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+
 -- Index
+CREATE INDEX IF NOT EXISTS idx_users_recovery ON mam_users(recovery_hash);
 CREATE INDEX IF NOT EXISTS idx_portfolios_team ON mam_portfolios(team_id);
 CREATE INDEX IF NOT EXISTS idx_portfolios_user ON mam_portfolios(user_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_port ON mam_snapshots(portfolio_id);
@@ -215,12 +224,25 @@ def create_user(username: str, email: str, password: str, role: str = "student")
     if len(password) < 6:
         return {"ok": False, "msg": "Mot de passe trop court (min 6 caractères)"}
     try:
-        _run(
-            "INSERT INTO mam_users (username, email, password_hash, role) VALUES (%s, %s, %s, %s)",
+        rows = _run(
+            "INSERT INTO mam_users (username, email, password_hash, role) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
             (username.strip().lower(), email.strip().lower(), _hash_password(password), role),
+            fetch=True,
         )
-        _log_event(None, username, "register")
-        return {"ok": True, "msg": f"Compte '{username}' créé avec succès !"}
+        user_id = rows[0]["id"] if rows else None
+        recovery_code = None
+        if user_id is not None:
+            try:
+                recovery_code = set_recovery_code(user_id)
+            except Exception:
+                recovery_code = None
+        _log_event(user_id, username, "register")
+        return {
+            "ok": True,
+            "msg": f"Compte '{username}' créé avec succès !",
+            "recovery_code": recovery_code,
+        }
     except psycopg2.errors.UniqueViolation:
         return {"ok": False, "msg": "Ce nom d'utilisateur ou email existe déjà."}
     except Exception as e:
@@ -239,14 +261,169 @@ def login_user(username: str, password: str) -> Optional[dict]:
     user = rows[0]
     _run("UPDATE mam_users SET last_login=NOW() WHERE id=%s", (user["id"],))
     _log_event(user["id"], username, "login")
+    # On ne garde jamais les empreintes secrètes en session
+    for _k in _SECRET_COLUMNS:
+        user.pop(_k, None)
     return user
 
 
 def get_all_users() -> list[dict]:
+    """Liste des comptes (vue admin) — sans aucun mot de passe ni code."""
     return _run(
-        "SELECT id, username, email, role, created_at, last_login FROM mam_users ORDER BY created_at DESC",
+        "SELECT id, username, email, role, created_at, last_login, "
+        "(recovery_hash IS NOT NULL) AS has_recovery_code, "
+        "COALESCE(must_change_password, FALSE) AS must_change_password "
+        "FROM mam_users ORDER BY created_at DESC",
         fetch=True,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RÉCUPÉRATION D'IDENTIFIANTS
+# ══════════════════════════════════════════════════════════════════════════════
+# Les codes ne sont jamais stockés en clair : seule leur empreinte SHA-256 l'est.
+# Les mots de passe restent hachés avec _hash_password (même fonction qu'à la
+# connexion), donc les comptes existants continuent de fonctionner.
+
+MIN_PASSWORD_LEN = 6
+RESET_CODE_TTL_MIN = 15
+RESET_MAX_ATTEMPTS = 5
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sans 0/O/1/I
+_SECRET_COLUMNS = ("password_hash", "recovery_hash", "reset_code_hash")
+
+
+def _digest(value: str) -> str:
+    normalized = (value or "").strip().upper().replace("-", "").replace(" ", "")
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _check_new_password(password: str) -> Optional[str]:
+    if not password or len(password) < MIN_PASSWORD_LEN:
+        return f"Mot de passe trop court (min {MIN_PASSWORD_LEN} caractères)."
+    return None
+
+
+def generate_recovery_code() -> str:
+    """Code du type ABCD-EFGH-JKLM-NPQR."""
+    raw = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(16))
+    return "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+
+
+def generate_temp_password() -> str:
+    alphabet = _CODE_ALPHABET + "abcdefghjkmnpqrstuvwxyz"
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def set_recovery_code(user_id: int) -> str:
+    """Crée (ou remplace) le code de récupération d'un compte. Retourne le code clair."""
+    code = generate_recovery_code()
+    _run("UPDATE mam_users SET recovery_hash=%s WHERE id=%s", (_digest(code), user_id))
+    return code
+
+
+def recover_with_code(code: str, new_password: str) -> dict:
+    """Code de récupération → nom d'utilisateur + nouveau mot de passe.
+    Le code utilisé est remplacé par un nouveau, renvoyé dans 'new_code'."""
+    err = _check_new_password(new_password)
+    if err:
+        return {"ok": False, "msg": err}
+    rows = _run(
+        "SELECT id, username FROM mam_users WHERE recovery_hash=%s",
+        (_digest(code),),
+        fetch=True,
+    )
+    if not rows:
+        return {"ok": False, "msg": "Code de récupération invalide.", "bad_code": True}
+    user = rows[0]
+    new_code = generate_recovery_code()
+    _run(
+        "UPDATE mam_users SET password_hash=%s, recovery_hash=%s, must_change_password=FALSE, "
+        "reset_code_hash=NULL, reset_expires=NULL, reset_attempts=0 WHERE id=%s",
+        (_hash_password(new_password), _digest(new_code), user["id"]),
+    )
+    _log_event(user["id"], user["username"], "recovery_code")
+    return {"ok": True, "msg": "Mot de passe modifié.",
+            "username": user["username"], "new_code": new_code}
+
+
+def create_email_reset(email: str) -> Optional[dict]:
+    """Prépare un code à 6 chiffres pour l'adresse donnée.
+    Retourne {'username', 'email', 'otp'} ou None si l'adresse est inconnue."""
+    rows = _run(
+        "SELECT id, username, email FROM mam_users WHERE email=%s",
+        ((email or "").strip().lower(),),
+        fetch=True,
+    )
+    if not rows:
+        return None
+    user = rows[0]
+    otp = f"{secrets.randbelow(10**6):06d}"
+    _run(
+        "UPDATE mam_users SET reset_code_hash=%s, "
+        "reset_expires=NOW() + (%s * INTERVAL '1 minute'), reset_attempts=0 WHERE id=%s",
+        (_digest(otp), RESET_CODE_TTL_MIN, user["id"]),
+    )
+    _log_event(user["id"], user["username"], "reset_request")
+    return {"username": user["username"], "email": user["email"], "otp": otp}
+
+
+def reset_with_email_code(email: str, otp: str, new_password: str) -> dict:
+    """Vérifie le code reçu par e-mail et change le mot de passe."""
+    err = _check_new_password(new_password)
+    if err:
+        return {"ok": False, "msg": err}
+    generic = "Code invalide ou expiré."
+    rows = _run(
+        "SELECT id, username, reset_code_hash, COALESCE(reset_attempts, 0) AS attempts, "
+        "(reset_expires > NOW()) AS still_valid FROM mam_users WHERE email=%s",
+        ((email or "").strip().lower(),),
+        fetch=True,
+    )
+    if not rows:
+        return {"ok": False, "msg": generic}
+    user = rows[0]
+    attempts = user["attempts"]
+    if not user["reset_code_hash"] or not user["still_valid"] or attempts >= RESET_MAX_ATTEMPTS:
+        return {"ok": False, "msg": generic + " Demande un nouveau code."}
+    if not hmac.compare_digest(_digest(otp), user["reset_code_hash"]):
+        _run(
+            "UPDATE mam_users SET reset_attempts=COALESCE(reset_attempts, 0) + 1 WHERE id=%s",
+            (user["id"],),
+        )
+        left = max(RESET_MAX_ATTEMPTS - attempts - 1, 0)
+        return {"ok": False, "msg": f"{generic} ({left} essai(s) restant(s))"}
+    _run(
+        "UPDATE mam_users SET password_hash=%s, must_change_password=FALSE, "
+        "reset_code_hash=NULL, reset_expires=NULL, reset_attempts=0 WHERE id=%s",
+        (_hash_password(new_password), user["id"]),
+    )
+    _log_event(user["id"], user["username"], "reset_email")
+    return {"ok": True, "msg": "Mot de passe modifié.", "username": user["username"]}
+
+
+def admin_reset_password(user_id: int, username: Optional[str] = None) -> str:
+    """Admin : génère un mot de passe temporaire, à changer à la prochaine connexion."""
+    temp = generate_temp_password()
+    _run(
+        "UPDATE mam_users SET password_hash=%s, must_change_password=TRUE, "
+        "reset_code_hash=NULL, reset_expires=NULL, reset_attempts=0 WHERE id=%s",
+        (_hash_password(temp), user_id),
+    )
+    _log_event(user_id, username, "admin_reset")
+    return temp
+
+
+def change_password(user_id: int, new_password: str) -> dict:
+    """Changement de mot de passe par l'utilisateur (ex. après un mot de passe temporaire)."""
+    err = _check_new_password(new_password)
+    if err:
+        return {"ok": False, "msg": err}
+    _run(
+        "UPDATE mam_users SET password_hash=%s, must_change_password=FALSE WHERE id=%s",
+        (_hash_password(new_password), user_id),
+    )
+    _log_event(user_id, None, "password_change")
+    return {"ok": True, "msg": "Mot de passe mis à jour."}
 
 
 def _log_event(user_id, username, event):
