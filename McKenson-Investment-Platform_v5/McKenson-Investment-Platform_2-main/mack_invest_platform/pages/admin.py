@@ -67,8 +67,34 @@ def _render_persistence_block():
 # Appeler dans render() :
 # _render_persistence_block()
 
-_ADMIN_PASSWORD = "MAM2026"
-_P = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+_ADMIN_PASSWORD = "MAM2026"  # repli uniquement si [admin] password absent des Secrets
+
+
+def _admin_password() -> str:
+    """Mot de passe admin : session > Streamlit Secrets [admin] password > valeur par défaut."""
+    override = st.session_state.get("_admin_pwd_override")
+    if override:
+        return override
+    try:
+        return str(st.secrets["admin"]["password"])
+    except Exception:
+        return _ADMIN_PASSWORD
+
+
+def _uses_default_password() -> bool:
+    try:
+        return not st.secrets["admin"]["password"]
+    except Exception:
+        return True
+
+
+def _is_admin_user() -> bool:
+    """Un compte avec role='admin' dans mam_users accède directement au panneau."""
+    user = st.session_state.get("mam_user") or {}
+    return user.get("role") == "admin"
+
+
+_P =dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
           font=dict(color="#94a3b8", family="Share Tech Mono"),
           margin=dict(l=8, r=8, t=28, b=8))
 
@@ -87,14 +113,23 @@ def render():
         '⚙️ ADMIN PANEL — MAM</h1>', unsafe_allow_html=True)
 
     # ── Auth gate ──────────────────────────────────────────────────────────────
-    if not st.session_state.get("admin_authenticated"):
+    if not (st.session_state.get("admin_authenticated") or _is_admin_user()):
         _login_form()
         return
 
     # ── Admin content ──────────────────────────────────────────────────────────
     _admin_header()
 
-    tab_teams, tab_game, tab_assets, tab_logs, tab_export, tab_danger = st.tabs([
+    if _uses_default_password():
+        st.warning(
+            "⚠️ Le mot de passe admin est encore celui par défaut. Définissez-en un dans "
+            "Streamlit Cloud → Settings → Secrets :\n\n"
+            "```toml\n[admin]\npassword = \"VotreMotDePasseAdmin\"\n```"
+        )
+
+    (tab_users, tab_teams, tab_game, tab_assets,
+     tab_logs, tab_export, tab_danger) = st.tabs([
+        "🔐 UTILISATEURS",
         "👥 ÉQUIPES & PORTEFEUILLES",
         "🎮 PARAMÈTRES JEU",
         "📋 ACTIFS",
@@ -103,6 +138,8 @@ def render():
         "☢️ ZONE DANGEREUSE",
     ])
 
+    with tab_users:
+        _users_tab()
     with tab_teams:
         _teams_tab()
     with tab_game:
@@ -132,16 +169,12 @@ def _login_form():
         pwd = st.text_input("Mot de passe", type="password", key="admin_pwd",
                             placeholder="Entrez le mot de passe admin…")
         if st.button("🔓 Connexion", key="admin_login", use_container_width=True):
-            if pwd == _ADMIN_PASSWORD:
+            if pwd == _admin_password():
                 st.session_state["admin_authenticated"] = True
                 st.success("✅ Authentification réussie !")
                 st.rerun()
             else:
                 st.error("❌ Mot de passe incorrect.")
-        st.markdown(
-            '<div style="font-family:Share Tech Mono;font-size:.68rem;color:#475569;'
-            'text-align:center;margin-top:12px;">Par défaut : MAM2026</div>',
-            unsafe_allow_html=True)
 
 
 def _admin_header():
@@ -181,6 +214,146 @@ def _admin_header():
         {"label": "AUM estimé",    "value": f"${total_value:,.0f}", "color": ""},
     ])
     st.markdown("---")
+
+
+# ── Users tab (comptes, export CSV, réinitialisation) ─────────────────────────
+_USER_COLS_FR = {
+    "id": "ID",
+    "username": "Nom d'utilisateur",
+    "email": "E-mail",
+    "role": "Rôle",
+    "created_at": "Créé le",
+    "last_login": "Dernière connexion",
+    "has_recovery_code": "Code de récupération",
+    "must_change_password": "Changement imposé",
+}
+
+
+def _fmt_dates(df: pd.DataFrame, cols) -> pd.DataFrame:
+    for col in cols:
+        if col in df.columns:
+            ts = pd.to_datetime(df[col], errors="coerce", utc=True)
+            df[col] = ts.dt.tz_convert("Europe/Paris").dt.strftime("%d/%m/%Y %H:%M").fillna("—")
+    return df
+
+
+def _users_tab():
+    section_title("COMPTES UTILISATEURS", "🔐")
+    try:
+        from utils.db import get_all_users, admin_reset_password, get_auth_log, is_db_available
+    except Exception as e:
+        st.error(f"Module base de données indisponible : {e}")
+        return
+    if not is_db_available():
+        st.warning("⚠️ Base de données inaccessible : impossible d'afficher les comptes.")
+        return
+    try:
+        users = get_all_users()
+    except Exception as e:
+        st.error(f"Lecture des comptes impossible : {e}")
+        return
+    if not users:
+        st.info("Aucun compte utilisateur pour le moment.")
+        return
+
+    df = _fmt_dates(pd.DataFrame(users), ["created_at", "last_login"])
+
+    metric_row([
+        {"label": "Comptes", "value": str(len(df)), "color": ""},
+        {"label": "Déjà connectés",
+         "value": str(int((df["last_login"] != "—").sum())) if "last_login" in df else "—",
+         "color": ""},
+        {"label": "Avec code de récupération",
+         "value": str(int(df["has_recovery_code"].sum())) if "has_recovery_code" in df else "—",
+         "color": ""},
+        {"label": "Changement imposé",
+         "value": str(int(df["must_change_password"].sum())) if "must_change_password" in df else "—",
+         "color": ""},
+    ])
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Recherche ──
+    query = st.text_input("🔎 Rechercher (nom d'utilisateur ou e-mail)", key="usr_search",
+                          placeholder="ex: jean.dupont")
+    if query:
+        q = query.strip().lower()
+        mask = (df["username"].astype(str).str.lower().str.contains(q, regex=False)
+                | df["email"].astype(str).str.lower().str.contains(q, regex=False))
+        dff = df[mask]
+    else:
+        dff = df
+
+    view = dff.copy()
+    for col in ("has_recovery_code", "must_change_password"):
+        if col in view.columns:
+            view[col] = view[col].map({True: "Oui", False: "Non"}).fillna("Non")
+    view = view.rename(columns=_USER_COLS_FR)
+    st.caption(f"{len(dff)} compte(s) affiché(s) sur {len(df)}")
+    st.dataframe(view, use_container_width=True, hide_index=True, height=320)
+
+    # ── Export CSV (aucun mot de passe ni code n'y figure) ──
+    st.download_button(
+        "⬇️ Exporter la liste (CSV)",
+        data=view.to_csv(index=False, sep=";").encode("utf-8-sig"),  # s'ouvre bien dans Excel FR
+        file_name=f"mam_utilisateurs_{datetime.now():%Y%m%d}.csv",
+        mime="text/csv",
+        key="usr_export",
+    )
+
+    # ── Réinitialisation forcée ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_title("RÉINITIALISER UN MOT DE PASSE", "🔁")
+    st.markdown(
+        '<div style="font-family:Share Tech Mono;font-size:.72rem;color:#94a3b8;'
+        'line-height:1.7;margin-bottom:10px;">'
+        "Génère un mot de passe temporaire (affiché une seule fois). "
+        "L'utilisateur devra en choisir un nouveau à sa prochaine connexion."
+        "</div>", unsafe_allow_html=True)
+
+    if dff.empty:
+        st.info("Aucun compte ne correspond à la recherche.")
+    else:
+        options = {f"{r['username']} — {r['email']}": (int(r["id"]), r["username"])
+                   for _, r in dff.iterrows()}
+        choice = st.selectbox("Utilisateur", list(options), key="usr_reset_sel")
+        confirm = st.checkbox(f"Je confirme vouloir réinitialiser le mot de passe de « {choice} »",
+                              key="usr_reset_confirm")
+        if st.button("🔑 Générer un mot de passe temporaire", key="usr_reset_btn",
+                     disabled=not confirm):
+            uid, uname = options[choice]
+            try:
+                temp = admin_reset_password(uid, uname)
+                st.session_state["usr_temp_pwd"] = (uname, temp)
+            except Exception as e:
+                st.error(f"Réinitialisation impossible : {e}")
+
+    if st.session_state.get("usr_temp_pwd"):
+        uname, temp = st.session_state["usr_temp_pwd"]
+        st.success(f"✅ Mot de passe temporaire pour **{uname}** :")
+        st.code(temp, language=None)
+        st.caption("Transmettez-le par un canal sûr (en main propre, message privé). "
+                   "Il ne sera plus affiché après avoir cliqué sur « Masquer ».")
+        if st.button("🙈 Masquer", key="usr_temp_hide"):
+            st.session_state.pop("usr_temp_pwd", None)
+            st.rerun()
+
+    # ── Journal des connexions ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("📜 Journal des connexions et récupérations (100 derniers)"):
+        try:
+            log = get_auth_log(100)
+            if log:
+                df_log = _fmt_dates(pd.DataFrame(log), ["created_at"])
+                cols = [c for c in ("created_at", "username", "event") if c in df_log.columns]
+                st.dataframe(
+                    df_log[cols].rename(columns={"created_at": "Date",
+                                                 "username": "Utilisateur",
+                                                 "event": "Événement"}),
+                    use_container_width=True, hide_index=True, height=260)
+            else:
+                st.info("Journal vide.")
+        except Exception as e:
+            st.error(f"Lecture du journal impossible : {e}")
 
 
 # ── Teams tab ─────────────────────────────────────────────────────────────────
@@ -613,8 +786,8 @@ def _danger_tab():
     # Change admin password
     section_title("CHANGER LE MOT DE PASSE ADMIN", "🔑")
     st.warning("⚠️ Le changement de mot de passe n'est actif que pour la session en cours "
-               "et ne persiste pas entre les redémarrages. Modifiez _ADMIN_PASSWORD dans admin.py "
-               "pour une persistance permanente.")
+               "et ne persiste pas entre les redémarrages. Pour un changement permanent, "
+               "modifiez [admin] password dans les Streamlit Secrets.")
     new_pwd = st.text_input("Nouveau mot de passe", type="password", key="new_admin_pwd")
     if st.button("🔑 Appliquer", key="btn_change_pwd") and new_pwd:
         # Store in session for current session only
