@@ -31,6 +31,8 @@ from utils.compliance import (
     render_profile_panel, render_rules_reference, get_profile, recent_log, HARD_LIMITS,
 )
 from utils.legal import render_risk_banner
+from utils.sectors import sector_of, option_sector, short_sector
+import html as _h
 
 _P = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -864,7 +866,7 @@ def _positions_tab(port, assets_df):
         if not holdings:
             st.info("Aucune position spot ouverte. Tradez depuis l'onglet Spot Trading.")
         else:
-            hdr = ["TICKER","QTÉ","PX ENTRÉE","PX ACTUEL","VAR 1J","VALEUR","P&L $","P&L %","POIDS"]
+            hdr = ["TICKER","SECTEUR","QTÉ","PX ENTRÉE","PX ACTUEL","VAR 1J","VALEUR","P&L $","P&L %","POIDS"]
             th  = "".join(f'<th style="font-family:Rajdhani;font-size:.63rem;color:#00d4ff;letter-spacing:.08em;'
                           f'text-transform:uppercase;padding:7px 10px;background:rgba(0,212,255,.06);'
                           f'border-bottom:1px solid rgba(0,212,255,.15);">{c}</th>' for c in hdr)
@@ -880,6 +882,7 @@ def _positions_tab(port, assets_df):
                 tbody += (
                     f'<tr style="border-bottom:1px solid rgba(255,255,255,.04);">'
                     f'<td style="padding:7px 10px;color:#00d4ff;font-weight:bold;font-family:Rajdhani;font-size:.85rem;">{tk}</td>'
+                    f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#94a3b8;">{_h.escape(sector_of(tk))}</td>'
                     f'<td style="padding:7px 10px;">{qty:,.4f}</td>'
                     f'<td style="padding:7px 10px;color:#7a93b0;">{_fmt(avg)}</td>'
                     f'<td style="padding:7px 10px;color:#e2e8f0;">{_fmt(curr)}</td>'
@@ -896,7 +899,7 @@ def _positions_tab(port, assets_df):
             # Total
             tc_ = _pnl_col(spot_pnl)
             tbody += (f'<tr style="background:rgba(0,212,255,.05);border-top:1px solid rgba(0,212,255,.2);">'
-                      f'<td colspan="5" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL SPOT — {len(holdings)} positions</td>'
+                      f'<td colspan="6" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL SPOT — {len(holdings)} positions</td>'
                       f'<td style="padding:7px 10px;color:#e2e8f0;font-weight:bold;">{_fmt(spot_mkt)}</td>'
                       f'<td style="padding:7px 10px;color:{tc_};font-weight:bold;">{_sgn(spot_pnl)}${abs(spot_pnl):,.2f}</td>'
                       f'<td style="padding:7px 10px;color:{tc_};">{_sgn(spot_pnl)}{abs(spot_pnl/spot_cost*100 if spot_cost else 0):.2f}%</td>'
@@ -923,7 +926,7 @@ def _positions_tab(port, assets_df):
         if not options:
             st.info("Aucune position option ouverte. Tradez depuis l'onglet Options.")
         else:
-            hdr_o = ["SOUS-JAC.","C/P","STRIKE","EXPIRATION","QTÉ","MULT","PRIME ENTRÉE","PRIME MTM","VALEUR MTM","P&L","DELTA Σ"]
+            hdr_o = ["SOUS-JAC.","SECTEUR / INSTRUMENT","C/P","SENS","STRIKE","EXPIRATION","QTÉ","MULT","PRIME ENTRÉE","PRIME MTM","VALEUR MTM","P&L","DELTA Σ"]
             th_o  = "".join(f'<th style="font-family:Rajdhani;font-size:.60rem;color:#7c3aed;letter-spacing:.08em;'
                             f'text-transform:uppercase;padding:7px 10px;background:rgba(124,58,237,.06);'
                             f'border-bottom:1px solid rgba(124,58,237,.15);">{c}</th>' for c in hdr_o)
@@ -950,7 +953,9 @@ def _positions_tab(port, assets_df):
                 tbody_o += (
                     f'<tr style="border-bottom:1px solid rgba(255,255,255,.04);">'
                     f'<td style="padding:7px 10px;color:#7c3aed;font-weight:bold;">{tk}</td>'
+                    f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#c4b5fd;">{_h.escape(option_sector(o))}</td>'
                     f'<td style="padding:7px 10px;color:{cp_c};font-weight:bold;">{"C" if o["type"]=="call" else "P"}</td>'
+                    f'<td style="padding:7px 10px;color:#94a3b8;">{"Achat" if is_long else "Vente"}</td>'
                     f'<td style="padding:7px 10px;">{o["strike"]:,.4f}</td>'
                     f'<td style="padding:7px 10px;color:#7a93b0;">{o.get("date","—")[:10]}</td>'
                     f'<td style="padding:7px 10px;">{n}</td>'
@@ -965,7 +970,7 @@ def _positions_tab(port, assets_df):
             # Total options
             tc_o = _pnl_col(opt_pnl)
             tbody_o += (f'<tr style="background:rgba(124,58,237,.05);border-top:1px solid rgba(124,58,237,.2);">'
-                        f'<td colspan="8" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL OPTIONS — {len(options)} positions</td>'
+                        f'<td colspan="10" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL OPTIONS — {len(options)} positions</td>'
                         f'<td style="padding:7px 10px;color:#e2e8f0;font-weight:bold;">${total_opt_val:,.2f}</td>'
                         f'<td style="padding:7px 10px;color:{tc_o};font-weight:bold;">{_sgn(opt_pnl)}${abs(opt_pnl):,.2f}</td>'
                         f'<td></td></tr>')
@@ -980,4 +985,12 @@ def _positions_tab(port, assets_df):
             st.info("Aucune transaction enregistrée.")
         else:
             df = pd.DataFrame(trades[::-1])
+            if "ticker" in df.columns:
+                def _sect(row):
+                    t, a = str(row.get("ticker", "")), str(row.get("action", "")).upper()
+                    base = t.split(" ")[0]
+                    if "OPTION" in a or "STRAT" in a or "COUVERTURE" in a:
+                        return f"Dérivé — option sur {short_sector(base)} ({base})"
+                    return sector_of(base)
+                df.insert(df.columns.get_loc("ticker") + 1, "secteur", df.apply(_sect, axis=1))
             st.dataframe(df, use_container_width=True, hide_index=True)
