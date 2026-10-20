@@ -278,6 +278,8 @@ def _committee_optimizer():
         st.markdown("##### ⚖️ Avant / après par ligne")
         cmp_ = pd.DataFrame({"Actuel": opt["actuel_lignes"], "Cible du comité": opt["cible_lignes"]}).fillna(0.0)
         cmp_["Écart"] = cmp_["Cible du comité"] - cmp_["Actuel"]
+        from utils.sectors import sector_of
+        cmp_.insert(0, "Secteur", [sector_of(t) for t in cmp_.index])
         cmp_ = cmp_[(cmp_["Actuel"] > 0.001) | (cmp_["Cible du comité"] > 0.001)].sort_values("Cible du comité", ascending=False)
         st.dataframe(cmp_.style.format("{:+.1%}", subset=["Écart"]).format("{:.1%}", subset=["Actuel", "Cible du comité"]),
                      use_container_width=True)
@@ -286,7 +288,9 @@ def _committee_optimizer():
         if opt["ordres"].empty:
             st.success("Aucun ordre : le portefeuille est déjà dans ses bandes de tolérance.")
         else:
-            st.dataframe(opt["ordres"][["ticker", "action", "qty", "price", "montant", "motif"]]
+            from utils.sectors import sector_of
+            st.dataframe(opt["ordres"].assign(secteur=[sector_of(t) for t in opt["ordres"]["ticker"]])
+                         [["ticker", "secteur", "action", "qty", "price", "montant", "motif"]]
                          .style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
                          use_container_width=True, hide_index=True)
 
