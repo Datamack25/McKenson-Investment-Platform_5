@@ -28,7 +28,12 @@ def render():
     from utils.portfolio import (frontier_scipy, hrp_weights, min_cvar_lp, optimize_scipy, portfolio_stats,
                                  risk_contributions, shrink_cov)
 
-    page_header("📈 OPTIMISEUR", "Markowitz · CVaR · parité de risque · HRP · frontière efficiente", "#7c3aed")
+    page_header("📈 OPTIMISEUR", "Correction automatique par le comité · Markowitz · CVaR · parité de risque · HRP",
+                "#7c3aed")
+    _committee_optimizer()
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_title("LABORATOIRE D'OPTIMISATION — COMPARER LES MÉTHODES", "🔬")
+    st.caption("Outil d'étude : compare les méthodes classiques sur une sélection libre d'actifs (n'agit pas sur vos portefeuilles).")
     assets = load_assets()
     names = dict(zip(assets["ticker"], assets["name"])) if not assets.empty else {}
     names.update({t: v[0] for t, v in UNIVERSE.items() if t not in names})
@@ -168,3 +173,157 @@ def render():
         if st.session_state.get("opt_zip"):
             st.download_button("⬇️ Images (.zip)", st.session_state["opt_zip"], file_name="optimisation_images.zip",
                                mime="application/zip", key="opt_dl_zip", use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  OPTIMISATION PAR LE COMITÉ — correction automatique d'un portefeuille
+# ══════════════════════════════════════════════════════════════════════════════
+def _committee_optimizer():
+    from components.committee_ui import (get_context, inject_css, ips_summary, portfolio_values, render_ips_form,
+                                         render_review)
+    from utils import committee as CM
+    from utils import hedging as H
+    from utils.auto_portfolio import execute_orders
+    from utils.compliance import get_profile, normalize_port_type
+    from utils.data import get_multi_prices, get_or_init_state, persist
+
+    inject_css()
+    section_title("OPTIMISATION PAR LE COMITÉ — CORRECTION AUTOMATIQUE DU PORTEFEUILLE", "🧑‍⚖️")
+    st.markdown(
+        '<div style="font-family:Share Tech Mono;font-size:.74rem;color:#94a3b8;line-height:1.7;margin-bottom:8px">'
+        "🌦️ <b>Jean-Michel TAUX-BAS</b> lit le régime de marché → 🏛️ <b>Thierry BALANCEMENT</b> fixe l'allocation cible "
+        "selon votre politique d'investissement → 🧮 <b>Mc Henson ALGO-RITHME</b> choisit et pondère les lignes selon des signaux "
+        "validés hors échantillon → 🛡️ <b>Aline DE MARGE</b> vérifie la perte potentielle (VaR, Expected Shortfall, "
+        "stress tests — méthodes de John Hull) et propose des couvertures → ⚖️ <b>Constance Probité</b> contrôle les "
+        "exclusions et la conformité → 🎙️ <b>Marc ETING-FINANCIER</b> vous présente le plan. "
+        "<b style='color:#ffd700'>Rien n'est exécuté sans votre confirmation</b> ; un veto bloque l'exécution.</div>",
+        unsafe_allow_html=True)
+
+    state = get_or_init_state()
+    ports = {(tid, pid): (f'{p.get("emoji", "📁")} {p["name"]} · {t.get("name", "Solo")}', p)
+             for tid, t in state.get("teams", {}).items() for pid, p in t.get("portfolios", {}).items() if p.get("name")}
+    if not ports:
+        st.info("Aucun portefeuille : créez-en un depuis le Dashboard.")
+        return
+    keys = list(ports)
+    active = (st.session_state.get("active_team"), st.session_state.get("active_portfolio"))
+    sel = st.selectbox("Portefeuille à optimiser", keys, format_func=lambda k: ports[k][0],
+                       index=keys.index(active) if active in keys else 0, key="cmo_port")
+    label, port = ports[sel]
+
+    if not port.get("ips"):
+        st.warning("Le comité a besoin de la politique d'investissement de ce portefeuille pour l'optimiser.")
+        ips = render_ips_form(f"cmo_{sel[1]}", CM.default_ips(get_profile().get("risque", "Équilibré")))
+        if ips:
+            port["ips"] = ips
+            persist()
+            st.rerun()
+        return
+    st.markdown("**Politique d'investissement :** " + ips_summary(port["ips"]))
+    c1, c2, c3 = st.columns([1, 1, 1.2])
+    intensity = c1.slider("Intensité tactique", 0.0, 1.0, 0.5, 0.1, key="cmo_int",
+                          help="0 = allocation stratégique du profil ; 1 = inclinaisons macro maximales")
+    band = c2.slider("Bande de tolérance", 0.0, 0.05, 0.02, 0.005, format="%.3f", key="cmo_band",
+                     help="Une ligne n'est ajustée que si elle s'écarte de sa cible de plus de cette part du portefeuille.")
+    if c3.button("🧑‍⚖️ RÉUNIR LE COMITÉ ET OPTIMISER", key="cmo_run", use_container_width=True, type="primary"):
+        ctx = get_context()
+        vals, cash, _ = portfolio_values(port)
+        universe = set(vals) | {t for t in list(CM.A.CLASS_PROXY.values()) + list(CM.UCITS_PROXY.values())
+                                + list(CM.PEA_PROXY.values())}
+        live = get_multi_prices(tuple(sorted(universe)))
+        with st.spinner("Le comité délibère…"):
+            opt = CM.committee_optimize(vals, cash, port["ips"], ctx, live, intensity, band)
+            pref = opt["contraintes"]["couvertures"]
+            hedges = []
+            if pref != "Jamais d'options":
+                hedges = H.propose_hedges(H.exposures_from_values(opt["projete"]), ctx["macro"].factors,
+                                          ctx.get("vix"), opt["nav"], prices=live)
+                if pref.startswith("Seulement"):
+                    hedges = [h for h in hedges if h["recommandee"]]
+            common = dict(options=port.get("options", []), options_ok=get_profile().get("options_ok", False),
+                          port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"))
+            before = CM.review_portfolio(vals, cash, port["ips"], ctx, **common)
+            after = CM.review_portfolio(opt["projete"], opt["cash_apres"], port["ips"], ctx, hedges=hedges, **common)
+        st.session_state["cmo_out"] = dict(key=sel, opt=opt, before=before, after=after, hedges=hedges,
+                                           data_sim=ctx.get("data_sim", False))
+
+    out = st.session_state.get("cmo_out")
+    if not out or out["key"] != sel:
+        return
+    opt, before, after, hedges = out["opt"], out["before"], out["after"], out["hedges"]
+    rb, ra = before.get("risque") or {}, after.get("risque") or {}
+
+    def _p(x):
+        return "—" if x is None or x != x else f"{x:.1%}"
+    vb, va = before["verdict"], after["verdict"]
+    k = st.columns(5)
+    k[0].metric("Verdict avant", CM.VERDICT_LABEL[vb].split(" ", 1)[1].title())
+    k[1].metric("Verdict après", CM.VERDICT_LABEL[va].split(" ", 1)[1].title())
+    k[2].metric("Perte potentielle 1 an (VaR 95 %)", _p(ra.get("var95_1an")),
+                delta=None if not rb.get("var95_1an") else f"{(ra.get('var95_1an', 0) - rb['var95_1an']) * 100:+.1f} pt",
+                delta_color="inverse")
+    k[3].metric("Expected Shortfall 97,5 % (10 j)", _p(ra.get("es975_10j")),
+                delta=None if not rb.get("es975_10j") else f"{(ra.get('es975_10j', 0) - rb['es975_10j']) * 100:+.1f} pt",
+                delta_color="inverse")
+    k[4].metric("Ordres proposés", str(len(opt["ordres"])))
+
+    st.markdown("##### 🧭 Comment le comité a construit le plan")
+    for who, note in opt["notes"]:
+        m = CM.MEMBER[who]
+        st.markdown(f'<div class="cm-reco" style="border-color:{m["couleur"]}">{m["emoji"]} <b>{m["nom"]}</b> — '
+                    f'{note}</div>', unsafe_allow_html=True)
+
+    c1, c2 = st.columns([1.1, 1])
+    with c1:
+        st.markdown("##### ⚖️ Avant / après par ligne")
+        cmp_ = pd.DataFrame({"Actuel": opt["actuel_lignes"], "Cible du comité": opt["cible_lignes"]}).fillna(0.0)
+        cmp_["Écart"] = cmp_["Cible du comité"] - cmp_["Actuel"]
+        cmp_ = cmp_[(cmp_["Actuel"] > 0.001) | (cmp_["Cible du comité"] > 0.001)].sort_values("Cible du comité", ascending=False)
+        st.dataframe(cmp_.style.format("{:+.1%}", subset=["Écart"]).format("{:.1%}", subset=["Actuel", "Cible du comité"]),
+                     use_container_width=True)
+    with c2:
+        st.markdown("##### 📝 Ordres (contrôlés un par un par la conformité)")
+        if opt["ordres"].empty:
+            st.success("Aucun ordre : le portefeuille est déjà dans ses bandes de tolérance.")
+        else:
+            st.dataframe(opt["ordres"][["ticker", "action", "qty", "price", "montant", "motif"]]
+                         .style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
+                         use_container_width=True, hide_index=True)
+
+    accepted = []
+    if hedges:
+        st.markdown("##### 🛡️ Couvertures proposées par Aline DE MARGE")
+        from pages.hedge_fund import _hedge_cards
+        accepted = _hedge_cards(hedges, get_profile().get("options_ok", False))
+
+    st.markdown("##### 🧑‍⚖️ Avis du comité sur le portefeuille APRÈS optimisation")
+    render_review(after)
+    with st.expander("Avis du comité sur le portefeuille AVANT optimisation"):
+        render_review(before, show_recos=True)
+
+    blocked = va == "veto" or not opt["allowed"] or out["data_sim"]
+    if blocked:
+        st.error("⛔ Exécution bloquée : " + ("données de marché simulées." if out["data_sim"] or not opt["allowed"]
+                                              else "le comité oppose son veto au portefeuille obtenu."))
+    ok = st.checkbox("Je confirme l'exécution simulée du plan du comité"
+                     + (f" et de {len(accepted)} couverture(s)" if accepted else ""), key="cmo_ok", disabled=blocked)
+    if st.button("🚀 APPLIQUER LE PLAN DU COMITÉ", key="cmo_go", disabled=blocked or not ok,
+                 use_container_width=True, type="primary"):
+        errs = execute_orders(port, opt["ordres"].drop(columns=["motif"], errors="ignore"),
+                              tag="Comité MAM — optimisation") if not opt["ordres"].empty else []
+        done, herrs = [], []
+        if accepted:
+            vals2, cash2, live2 = portfolio_values(port)
+            ctx2 = get_context()
+            for h in H.propose_hedges(H.exposures_from_values(vals2), ctx2["macro"].factors,
+                                      ctx2.get("vix"), cash2 + sum(vals2.values()), prices=live2):
+                if h["cle"] in accepted:
+                    e = H.execute_hedge(port, h, tag="Comité MAM")
+                    (herrs.append(e) if e else done.append(h["panier"]))
+        port["committee"] = CM.summary_for_storage(after)
+        persist()
+        st.session_state.pop("cmo_out", None)
+        st.success(f"✅ Plan appliqué : {len(opt['ordres']) - len(errs)} ordre(s)"
+                   + (f", couvertures : {', '.join(done)}" if done else "") + ". Le portefeuille est validé par le comité.")
+        if errs or herrs:
+            st.warning("Ordres bloqués par la conformité :\n\n- " + "\n- ".join(errs + herrs))

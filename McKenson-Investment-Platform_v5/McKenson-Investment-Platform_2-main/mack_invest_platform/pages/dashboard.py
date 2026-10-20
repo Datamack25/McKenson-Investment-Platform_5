@@ -35,6 +35,7 @@ _STRATEGIES = [
     {"id":"commodity", "emoji":"🛢️","name":"Commodities",    "desc":"Matières premières & énergie"},
     {"id":"crypto",    "emoji":"₿", "name":"Crypto Alpha",   "desc":"Panier d'actifs digitaux"},
     {"id":"arbitrage", "emoji":"🔁","name":"Arbitrage",      "desc":"Long/short market-neutral"},
+    {"id":"etf",       "emoji":"🧺","name":"ETF Core",       "desc":"Uniquement des ETF indiciels — gestion passive à bas coût"},
 ]
 
 _ASSET_CONSTRAINTS: dict[str, dict] = {
@@ -58,6 +59,7 @@ _STRATEGY_CONSTRAINTS: dict[str, dict] = {
     "commodity": {"recommended":["commodity","etf"],       "max_crypto":10,"max_bond":10},
     "crypto":    {"recommended":["crypto"],                "max_crypto":80,"max_bond":0},
     "arbitrage": {"recommended":["equity","etf","forex"],  "max_crypto":10,"max_bond":20},
+    "etf":       {"recommended":["etf"],                   "max_crypto":0, "max_bond":60},
 }
 
 
@@ -113,10 +115,10 @@ def _wizard(state: dict):
     <div style="font-family:Rajdhani,sans-serif;font-size:1.3rem;font-weight:700;
     color:#00d4ff;letter-spacing:.12em;">🚀 NOUVEAU PORTEFEUILLE</div>
     <div style="font-family:Share Tech Mono,monospace;font-size:.73rem;color:#7a93b0;margin-top:4px;">
-    Configurez votre portefeuille en 4 étapes</div></div>
+    Configurez votre portefeuille en 5 étapes — validé par le comité MAM</div></div>
     """, unsafe_allow_html=True)
 
-    labels = ["Identité", "Stratégie", "Actifs", "Équipe"]
+    labels = ["Identité", "Stratégie", "Actifs", "Politique", "Comité & équipe"]
     bar_html = '<div style="display:flex;gap:6px;margin-bottom:20px;">'
     for i, lbl in enumerate(labels, 1):
         done   = i < step
@@ -230,6 +232,21 @@ def _wizard(state: dict):
                     st.session_state["wizard_step"] = 4; st.rerun()
 
     elif step == 4:
+        from components.committee_ui import render_ips_form, ips_summary
+        st.markdown('<div style="font-family:Rajdhani;font-size:1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px;">'
+                    '📋 Votre politique d\'investissement</div>', unsafe_allow_html=True)
+        if st.session_state.get("wiz_ips"):
+            st.markdown("**Politique enregistrée :** " + ips_summary(st.session_state["wiz_ips"]))
+        new = render_ips_form("wiz", st.session_state.get("wiz_ips"), "💾 Enregistrer et continuer →")
+        if new:
+            st.session_state["wiz_ips"] = new
+            st.session_state.pop("wiz_rev", None)
+            st.session_state["wizard_step"] = 5
+            st.rerun()
+        if st.button("← Retour", key="wiz_b4i", use_container_width=True):
+            st.session_state["wizard_step"] = 3; st.rerun()
+
+    elif step == 5:
         st.markdown('<div style="font-family:Rajdhani;font-size:1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px;">🏢 Équipe — <span style="color:#7a93b0;font-size:.8rem;font-weight:400;">optionnel</span></div>', unsafe_allow_html=True)
         teams = state.get("teams", {})
         team_mode = st.radio("Équipe", ["Sans équipe","Rejoindre une équipe existante","Créer une nouvelle équipe"], key="wiz_team_mode")
@@ -262,10 +279,31 @@ def _wizard(state: dict):
         c1, c2 = st.columns(2)
         with c1:
             if st.button("← Retour", key="wiz_b4", use_container_width=True):
-                st.session_state["wizard_step"] = 3; st.rerun()
+                st.session_state["wizard_step"] = 4; st.rerun()
+        # ── Validation par le comité (BLOQUANTE à la création) ──
+        from components.committee_ui import render_review, get_context, render_personas
+        from utils import committee as CM
+        from utils.compliance import get_profile
+        ips = st.session_state.get("wiz_ips") or CM.default_ips(get_profile().get("risque", "Équilibré"))
+        st.session_state["wiz_ips"] = ips
+        if "wiz_rev" not in st.session_state:
+            st.session_state["wiz_rev"] = CM.review_creation(
+                ips, st.session_state.get("wiz_strat", "growth"), st.session_state.get("wiz_types", []),
+                get_context(), get_profile().get("options_ok", False),
+                label=st.session_state.get("wiz_name_ok", "Nouveau portefeuille"))
+        rev = st.session_state["wiz_rev"]
         with c2:
-            if st.button("✅ Créer le portefeuille", key="wiz_create", use_container_width=True):
+            blocked = rev["verdict"] == "veto"
+            if st.button("✅ Créer le portefeuille", key="wiz_create", use_container_width=True, disabled=blocked):
                 _do_create(state, team_mode, chosen_team_id)
+        st.markdown('<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#7c3aed;margin-top:14px">'
+                    '🧑‍⚖️ AVIS DU COMITÉ MAM</div>', unsafe_allow_html=True)
+        render_review(rev)
+        if rev["verdict"] == "veto":
+            st.error("⛔ Création impossible en l'état : le comité oppose son veto. Modifiez la stratégie (étape 2), "
+                     "les classes d'actifs (étape 3) ou votre politique d'investissement (étape 4).")
+        with st.expander("🏛️ Comité de gestion MIP — l'équipe du desk"):
+            render_personas()
 
 
 def _do_create(state: dict, team_mode: str, chosen_team_id):
@@ -290,11 +328,17 @@ def _do_create(state: dict, team_mode: str, chosen_team_id):
         tid = solo_key
 
     pid = "P" + uuid.uuid4().hex[:6].upper()
+    rev = st.session_state.get("wiz_rev")
+    if rev and rev.get("verdict") == "veto":
+        st.error("⛔ Le comité a refusé ce portefeuille."); return
+    from utils import committee as CM
     teams[tid]["portfolios"][pid] = {
         "id":pid,"name":name,"emoji":emoji,
         "strategy":strat,"asset_types":types,
         "cash":float(capital),"initial_cash":float(capital),
         "holdings":{},"trades":[],"history":[],
+        "ips": st.session_state.get("wiz_ips"),
+        "committee": CM.summary_for_storage(rev) if rev else None,
     }
     # sélection appliquée par app.py avant la création des sélecteurs (évite l'erreur Streamlit)
     st.session_state["_select_portfolio"] = (tid, pid)
@@ -417,10 +461,18 @@ def _performance_panel(all_ports: list):
     section_title("PERFORMANCE COMPARÉE DES PORTEFEUILLES" if multi else "PERFORMANCE VS MARCHÉ", "📈")
 
     labels = {f'{it["port"].get("emoji", "📁")} {it["port"]["name"]} · {it["team_label"]}': it for it in cands}
+    teams_present = sorted({it["team_label"] for it in cands})
+    view = "Par portefeuille"
+    if multi and len(teams_present) >= 2:
+        view = st.radio("Comparer", ["Par portefeuille", "Par équipe"], horizontal=True, key="perf_view",
+                        help="« Par équipe » additionne les portefeuilles de chaque équipe (valeur totale).")
     c1, c2 = st.columns([3, 1.3])
     with c1:
-        if multi:
-            chosen = st.multiselect("Portefeuilles à comparer", list(labels), default=list(labels)[:8],
+        if multi and view == "Par portefeuille":
+            team_f = st.multiselect("Équipes", teams_present, default=teams_present, key="perf_teams") \
+                if len(teams_present) >= 2 else teams_present
+            pool = [l for l, it in labels.items() if it["team_label"] in team_f]
+            chosen = st.multiselect("Portefeuilles à comparer", pool, default=pool[:8],
                                     max_selections=8, key="perf_ports")
         else:
             chosen = list(labels)
@@ -438,6 +490,19 @@ def _performance_panel(all_ports: list):
             s, src = PF.portfolio_series(labels[lab]["port"])
             series[lab] = s
             sources.add(src)
+    if view == "Par équipe":
+        by_team: dict[str, list] = {}
+        for lab, s in series.items():
+            if len(s.dropna()):
+                by_team.setdefault(labels[lab]["team_label"], []).append(s)
+        series = {}
+        for team, lst in by_team.items():
+            idx = lst[0].index
+            for s in lst[1:]:
+                idx = idx.union(s.index)
+            # avant sa première transaction, un portefeuille vaut son capital initial (1re valeur)
+            tot = sum(s.reindex(idx).ffill().fillna(s.iloc[0]) for s in lst)
+            series[f"{team} · {len(lst)} portefeuille(s)"] = tot.rename(team)
     valid = {k: v for k, v in series.items() if len(v.dropna()) >= 1}
     if not valid:
         st.info("Historique insuffisant pour tracer la performance.")
@@ -549,7 +614,13 @@ def render():
     st.markdown(_build_tape(tape_prices), unsafe_allow_html=True)
 
     if st.session_state.get("force_wizard"):
-        st.session_state.pop("force_wizard", None)
+        # l'assistant reste ouvert pendant toutes les étapes (fermé par « Créer » ou « Annuler »)
+        if st.button("✖ Annuler la création", key="wiz_cancel"):
+            for k in [k for k in st.session_state.keys() if k.startswith("wiz_")]:
+                del st.session_state[k]
+            st.session_state.pop("force_wizard", None)
+            st.session_state["wizard_step"] = 1
+            st.rerun()
         _wizard(state)
         return
 

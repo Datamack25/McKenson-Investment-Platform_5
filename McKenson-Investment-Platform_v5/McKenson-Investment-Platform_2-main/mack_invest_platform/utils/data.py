@@ -284,6 +284,16 @@ def _static_news() -> list[dict]:
 #  STATE MANAGEMENT — Supabase-backed
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _json(v):
+    """Colonne JSONB : dict déjà décodé par psycopg2, ou texte JSON, ou None."""
+    if v is None or isinstance(v, (dict, list)):
+        return v
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+
 def _build_state_from_db(user_id: int) -> dict:
     """Reconstruit le dict state depuis Supabase pour un utilisateur."""
     portfolios_db = load_portfolios_for_user(user_id)
@@ -321,6 +331,8 @@ def _build_state_from_db(user_id: int) -> dict:
             "options":p.get("options",[]),
             "trades":p.get("trades",[]),
             "history":p.get("history",[]),
+            "ips":_json(p.get("ips")),
+            "committee":_json(p.get("committee")),
         }
 
     return state

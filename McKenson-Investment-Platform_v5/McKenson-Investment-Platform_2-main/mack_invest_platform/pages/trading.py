@@ -85,6 +85,10 @@ def render():
     # ── Profil investisseur (adéquation / caractère approprié) ────────────────
     render_profile_panel()
 
+    # ── Comité virtuel : politique d'investissement et validation du portefeuille ─
+    from components.committee_ui import committee_panel
+    committee_panel(port, key=f"td_cm_{port_id}")
+
     # ── Sélecteur de stratégie ────────────────────────────────────────────────
     current_type = normalize_port_type(port)
 
@@ -492,6 +496,26 @@ def _options_desk(port, state, team_id, port_id, assets_df):
 #  STRATÉGIES D'OPTIONS SELON LE RÉGIME DE MARCHÉ
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _official_regime() -> dict:
+    """Régime OFFICIEL du comité (8 facteurs, Jean-Michel TAUX-BAS) ; repli : lecture S&P 500 + VIX."""
+    from utils.option_strategies import quick_regime
+    try:
+        from components.committee_ui import get_context
+        ctx = get_context()
+        m = ctx["macro"]
+        if not ctx.get("data_sim"):
+            top = sorted(m.factors.items(), key=lambda kv: -abs(kv[1]))[:3]
+            return dict(regime=m.regime, vix=ctx.get("vix"), trend=float("nan"), ok=True,
+                        explication=m.regime_text + " Facteurs dominants : "
+                        + ", ".join(f"{k} {v:+.1f}" for k, v in top) + ".",
+                        source="Régime officiel du comité — Jean-Michel TAUX-BAS, 8 facteurs macro (Hedge Fund Agent).")
+    except Exception:
+        pass
+    out = quick_regime()
+    out["source"] = "Lecture simplifiée (tendance S&P 500 + VIX) : données du comité indisponibles."
+    return out
+
+
 def _strategy_desk(port, assets_df):
     from utils.option_strategies import (
         CATALOG, REGIMES, LEVEL_LABEL, recommend, quick_regime, build_legs, usage_level,
@@ -504,8 +528,7 @@ def _strategy_desk(port, assets_df):
 
     # ── 1. Régime de marché ───────────────────────────────────────────────────
     if "strat_regime" not in st.session_state:
-        with st.spinner("Lecture des conditions de marché (S&P 500, VIX)…"):
-            st.session_state["strat_regime"] = quick_regime()
+        st.session_state["strat_regime"] = _official_regime()
     rg = st.session_state["strat_regime"]
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -514,8 +537,7 @@ def _strategy_desk(port, assets_df):
             f'<div style="border-left:3px solid {col};background:rgba(0,0,0,.25);border-radius:4px;'
             f'padding:8px 12px;font-family:Share Tech Mono;font-size:.74rem;color:#cbd5e1;line-height:1.7;">'
             f'<b style="color:{col};">RÉGIME DÉTECTÉ : {rg["regime"].upper()}</b><br>{rg["explication"]}<br>'
-            f'<span style="color:#475569;font-size:.66rem;">Lecture simplifiée (tendance S&P 500 + VIX). '
-            f'L\'analyse complète à 8 facteurs macro est dans 🦅 Hedge Fund Agent.</span></div>',
+            f'<span style="color:#475569;font-size:.66rem;">{rg.get("source", "")}</span></div>',
             unsafe_allow_html=True)
     with c2:
         regime = st.selectbox("Régime retenu", REGIMES,

@@ -177,6 +177,10 @@ ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS failed_logins INTEGER DEFAULT 0;
 ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
 ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS investor_profile JSONB;
 
+-- v5.3 : politique d'investissement (IPS) et avis du comité virtuel, par portefeuille
+ALTER TABLE mam_portfolios ADD COLUMN IF NOT EXISTS ips JSONB;
+ALTER TABLE mam_portfolios ADD COLUMN IF NOT EXISTS committee JSONB;
+
 -- v5.1 : journal d'audit des contrôles de conformité (ajout uniquement)
 CREATE TABLE IF NOT EXISTS mam_compliance_log (
     id SERIAL PRIMARY KEY,
@@ -554,11 +558,11 @@ def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
     _run("""
         INSERT INTO mam_portfolios
             (id, team_id, user_id, name, emoji, strategy, asset_types,
-             cash, initial_cash, holdings, options, trades, history, updated_at)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+             cash, initial_cash, holdings, options, trades, history, ips, committee, updated_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
         ON CONFLICT (id) DO UPDATE SET
             name=EXCLUDED.name, emoji=EXCLUDED.emoji, strategy=EXCLUDED.strategy,
-            initial_cash=EXCLUDED.initial_cash,
+            initial_cash=EXCLUDED.initial_cash, ips=EXCLUDED.ips, committee=EXCLUDED.committee,
             cash=EXCLUDED.cash, holdings=EXCLUDED.holdings, options=EXCLUDED.options,
             trades=EXCLUDED.trades, history=EXCLUDED.history, updated_at=NOW()
         WHERE mam_portfolios.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
@@ -575,6 +579,8 @@ def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
         json.dumps(port_data.get("options", [])),
         json.dumps(port_data.get("trades", [])),
         json.dumps(port_data.get("history", [])),
+        json.dumps(port_data["ips"], default=str) if port_data.get("ips") else None,
+        json.dumps(port_data["committee"], default=str) if port_data.get("committee") else None,
     ))
 
 

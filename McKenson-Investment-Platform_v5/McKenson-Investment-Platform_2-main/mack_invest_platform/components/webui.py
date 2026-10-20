@@ -108,11 +108,24 @@ WEB_CSS = """
 
 /* ── Navigation à onglets (boutons Streamlit habillés) ── */
 div[data-testid="stHorizontalBlock"]:has(.nav-marker) {
-    gap: 2px !important; flex-wrap: nowrap !important; overflow-x: auto;
+    gap: 2px !important; flex-wrap: nowrap !important; overflow-x: auto !important;
     border-bottom: 1px solid rgba(0,212,255,.14); margin-bottom: 14px;
-    scrollbar-width: none;
+    padding-bottom: 4px; scroll-behavior: smooth;
+    scrollbar-width: thin; scrollbar-color: rgba(0,212,255,.45) rgba(0,212,255,.06);
 }
-div[data-testid="stHorizontalBlock"]:has(.nav-marker)::-webkit-scrollbar { display: none; }
+/* barre de défilement visible : tous les onglets restent accessibles */
+div[data-testid="stHorizontalBlock"]:has(.nav-marker)::-webkit-scrollbar { height: 6px; display: block; }
+div[data-testid="stHorizontalBlock"]:has(.nav-marker)::-webkit-scrollbar-track {
+    background: rgba(0,212,255,.06); border-radius: 3px;
+}
+div[data-testid="stHorizontalBlock"]:has(.nav-marker)::-webkit-scrollbar-thumb {
+    background: rgba(0,212,255,.45); border-radius: 3px;
+}
+div[data-testid="stHorizontalBlock"]:has(.nav-marker)::-webkit-scrollbar-thumb:hover { background: #00d4ff; }
+/* écrans étroits : les onglets passent à la ligne au lieu de défiler */
+@media (max-width: 760px) {
+    div[data-testid="stHorizontalBlock"]:has(.nav-marker) { flex-wrap: wrap !important; overflow-x: visible !important; }
+}
 div[data-testid="stHorizontalBlock"]:has(.nav-marker) > div[data-testid="stColumn"],
 div[data-testid="stHorizontalBlock"]:has(.nav-marker) > div[data-testid="column"] {
     min-width: max-content !important; flex: 1 1 auto !important;
@@ -157,6 +170,8 @@ div[data-testid="stHorizontalBlock"]:has(.nav-marker) .stButton > button[data-te
 .port-card .pn { font-family: Rajdhani, sans-serif; font-weight: 700; font-size: .9rem; color: #e2e8f0; }
 .port-card .pt { font-family: Rajdhani, sans-serif; font-size: .6rem; color: #475569;
                  letter-spacing: .1em; margin-left: 6px; }
+.cm-badge { display: inline-block; font-family: Rajdhani, sans-serif; font-weight: 700; font-size: .58rem;
+            letter-spacing: .1em; padding: 1px 7px; border-radius: 3px; margin-left: 6px; }
 
 /* ── Pied de page ── */
 .mam-footer {
@@ -359,6 +374,14 @@ def render_account_bar(state: dict):
     return sel_team, user_ports
 
 
+def _cm_badge(port: dict) -> str:
+    try:
+        from components.committee_ui import badge
+        return badge(port)
+    except Exception:
+        return ""
+
+
 def render_portfolio_cards(user_ports: dict, max_cards: int = 4):
     if not user_ports:
         return
@@ -375,7 +398,7 @@ def render_portfolio_cards(user_ports: dict, max_cards: int = 4):
             f'<div class="port-card{" active" if pid == active else ""}">'
             f'<div class="pn">{_html.escape(str(port.get("emoji", "📁")))} '
             f'{_html.escape(str(port.get("name", "—")))}'
-            f'<span class="pt">{_html.escape(str(port.get("portfolio_type", "Libre")))}</span></div>'
+            f'<span class="pt">{_html.escape(str(port.get("portfolio_type", "Libre")))}</span>{_cm_badge(port)}</div>'
             f'AUM <b style="color:#e2e8f0">${s["aum"]:,.0f}</b> · {s["n_pos"]} pos.<br>'
             f'P&amp;L <b style="color:{col}">{sg}${abs(s["pnl"]):,.2f}</b> '
             f'<span style="color:{col};font-size:.62rem">({sg}{abs(s["pnl_pct"]):.2f}%)</span>'

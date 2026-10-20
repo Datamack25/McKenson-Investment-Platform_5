@@ -20,7 +20,7 @@ from utils.db import (
     recover_with_code, create_email_reset, reset_with_email_code, change_password,
     RESET_CODE_TTL_MIN, login_lock_minutes,
 )
-from utils.legal import APP_NAME, APP_VERSION, AUTHOR, AUTHOR_TITLE, DISCLAIMER, render_legal_notice
+from utils.legal import APP_NAME, APP_VERSION, AUTHOR, AUTHOR_TITLE, DISCLAIMER
 _MAX_TRIES = 5
 
 
@@ -136,7 +136,6 @@ def _logo():
         <div class="sub" style="color:#475569;margin-top:4px;">par {AUTHOR}, {AUTHOR_TITLE}</div>
     </div>
     """, unsafe_allow_html=True)
-    render_legal_notice(compact=True)
 
 
 # ── E-mail (optionnel) ─────────────────────────────────────────────────────────

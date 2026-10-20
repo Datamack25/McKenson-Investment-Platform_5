@@ -1,13 +1,41 @@
-📈 McKenson Investment Platform - MIP — version 5.2.0
+📈 McKenson Investment Platform - MIP — version 5.3.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.2.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.3.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.3 — Comité d'investissement virtuel
+🧑‍⚖️ Six professionnels VIRTUELS (personnages fictifs) examinent chaque portefeuille (utils/committee.py) :
+   🌦️ Jean-Michel TAUX-BAS — Économiste en chef (inspiration Ray Dalio : cycles, diversification par régimes)
+   🧮 Mc Henson ALGO-RITHME — Recherche quantitative (inspiration Jim Simons : signaux validés hors échantillon)
+   🏛️ Thierry BALANCEMENT — Gérant principal / CIO (inspiration Buffett, Graham, Bogle : marge de sécurité, frais bas)
+   🛡️ Aline DE MARGE — Directrice des risques (méthodes de John Hull, Howard Marks) — droit de veto
+   ⚖️ Constance Probité — Conformité (MiFID II, AMF, UCITS, MiCA) — droit de veto
+   🎙️ Marc ETING-FINANCIER — Relation client (inspiration Peter Lynch) — synthèse et recommandations
+📋 Politique d'investissement (IPS) par portefeuille : objectif, horizon, perte maximale acceptable, réaction
+   à une baisse, liquidité, part du patrimoine, expérience, ESG, exclusions, enveloppe (ETF US / UCITS / PEA /
+   assurance-vie), couvertures. La contrainte la plus prudente fixe le profil ; volatilité cible = perte max / 1,645.
+✅ Validation BLOQUANTE par le comité à la création d'un portefeuille (assistant en 5 étapes), au Hedge Fund
+   Agent, à l'Auto-Portefeuille et au bouton Optimiser ; CONSULTATIVE pour les ordres manuels du Trading Desk
+   (règle P01). Badge « à valider / validé / refusé » sur chaque portefeuille.
+📈 Optimizer → « Optimisation par le comité » : correction automatique du portefeuille (régime → allocation
+   sous contraintes IPS → choix des lignes par les signaux → contrôle VaR / ES → couvertures → conformité),
+   bandes de tolérance, tableau avant / après, avis du comité, exécution en un clic après confirmation.
+🛡️ Risques selon John Hull (utils/risk_hull.py) : VaR 99 % 1 j / 10 j (historique et paramétrique), Expected
+   Shortfall 97,5 %, volatilité EWMA λ = 0,94, contributions d'Euler, backtesting de Kupiec, stress tests et
+   stress test inversé, grecques des options.
+📄 Rapport du comité (utils/committee_report.py) : PNG une page (graphique vs indice, avis de chaque
+   professionnel, synthèse et recommandations, décisions à prendre) + PDF détaillé ; page Rapports et
+   e-mail du lundi (GitHub Actions) pour chaque portefeuille suivi.
+🌦️ Régime de marché unifié : le régime à 8 facteurs du comité est OFFICIEL (allocations, couvertures,
+   stratégies d'options) ; le mélange gaussien d'IA Marchés sert de contrôle croisé.
+🖱️ Ergonomie : bandeaux qui s'arrêtent au survol, barre d'onglets défilante, nouvelles équipes et
+   comparaison des performances par équipe, mention légale en pied de page et dans les rapports uniquement.
 
 Nouveautés v5.2 — Hedge Fund Agent exécutable, couvertures par dérivés, performance vs marché
 🦅 Hedge Fund Agent → Validation humaine : la proposition du desk peut CRÉER UN NOUVEAU PORTEFEUILLE (nom,
@@ -228,11 +256,15 @@ eslsca_platform/
 │   ├── compliance.py       # v5.1 contrôles de conformité pré-négociation, profil investisseur, journal d'audit
 │   ├── option_strategies.py# v5.1 stratégies d'options multi-jambes selon le régime de marché
 │   ├── etf_universe.py     # v5.1 métadonnées ETF et portefeuilles modèles 100 % ETF
+│   ├── committee.py        # v5.3 comité virtuel, IPS, avis, validation, optimisation
+│   ├── committee_report.py # v5.3 rapport du comité (PNG + PDF + e-mail)
+│   ├── risk_hull.py        # v5.3 VaR, ES, EWMA, Euler, Kupiec, stress tests (J. Hull)
 │   ├── hedging.py          # v5.2 couvertures par options proposées par le desk
 │   ├── performance.py      # v5.2 NAV reconstituée, indicateurs de gestion, indices de référence
 │   └── legal.py            # v5.1 auteur, version, avertissements (source unique)
 └── components/
     ├── ai_shared.py        # chargement en cache du modèle, KPI, en-têtes des pages IA
+    ├── committee_ui.py     # v5.3 cartes du comité, questionnaire IPS, panneau de validation
     ├── ui.py               # CSS theme, ticker strip, news banner
     └── webui.py            # Habillage page web : en-tête, onglets, bandeau compte, footer
 Admin Password
@@ -244,4 +276,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.2.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.3.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

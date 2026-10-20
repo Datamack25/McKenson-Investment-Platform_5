@@ -54,6 +54,7 @@ def render():
         kpi("Fiabilité du modèle", f"AUC {val['auc']:.2f}" if val.get("ok") else "—",
             f"précision {val['accuracy']:.0%} vs {val['baseline']:.0%} naïf" if val.get("ok") else ""),
     ])
+    _regime_crosscheck(cur)
 
     tabs = st.tabs(["🌍 RÉGIME & MACRO", "🛰️ GÉOPOLITIQUE & ACTUALITÉS", "🤖 SIGNAUX ML",
                     "💡 CONSEILS PORTEFEUILLE", "🔬 MODÈLE & VALIDATION"])
@@ -414,3 +415,33 @@ def _tab_model(val):
                       legend=dict(orientation="h", y=-0.2))
     fig.update_yaxes(tickformat=".0%")
     st.plotly_chart(fig, use_container_width=True)
+
+
+# ── Régime officiel du comité vs modèle statistique (contrôle croisé) ─────────
+_FAMILY = {
+    "Expansion désinflationniste": {"Expansion / Risk-on", "Reprise"},
+    "Surchauffe / reflation": {"Expansion / Risk-on", "Reprise"},
+    "Ralentissement désinflationniste": {"Ralentissement"},
+    "Stagflation": {"Ralentissement", "Crise / Risk-off"},
+    "Aversion au risque": {"Crise / Risk-off"},
+}
+
+
+def _regime_crosscheck(gmm_regime: str):
+    """Le régime OFFICIEL est celui du comité (8 facteurs, Jean-Michel TAUX-BAS) : il pilote allocations,
+    couvertures et stratégies d'options. Le mélange gaussien de cette page sert de contrôle croisé."""
+    try:
+        from components.committee_ui import get_context
+        off = get_context()["macro"].regime
+    except Exception:
+        return
+    agree = gmm_regime in _FAMILY.get(off, set())
+    col = "#00ff88" if agree else "#ffd700"
+    st.markdown(
+        f'<div style="border-left:3px solid {col};background:rgba(0,0,0,.25);border-radius:4px;padding:7px 12px;'
+        f'margin:6px 0 10px;font-family:Share Tech Mono;font-size:.72rem;color:#cbd5e1;">'
+        f'🌦️ <b>Régime officiel du comité</b> (Jean-Michel TAUX-BAS, 8 facteurs macro) : <b>{off}</b> · '
+        f'modèle statistique de cette page (mélange gaussien) : <b>{gmm_regime}</b> → '
+        f'<b style="color:{col}">{"concordant" if agree else "divergent : prudence, les deux lectures ne racontent pas la même histoire"}</b>. '
+        f'<span style="color:#64748b">Le régime officiel pilote les allocations, les couvertures et les stratégies d\'options.</span>'
+        f'</div>', unsafe_allow_html=True)

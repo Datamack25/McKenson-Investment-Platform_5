@@ -149,6 +149,11 @@ RULES = {
             "Sans questionnaire rempli, le profil par défaut « Équilibré » s'applique et les produits dérivés "
             "restent fermés.",
             "Connaissance client — MiFID II art. 25(2)"),
+    "P01": ("Politique d'investissement du portefeuille (avis du comité)",
+            "L'ordre s'écarte de la politique d'investissement que vous avez définie pour ce portefeuille "
+            "(exclusions, enveloppe, plafond crypto). Sur le Trading Desk, l'avis du comité est consultatif : "
+            "l'ordre reste possible, mais il sera signalé lors de la prochaine revue.",
+            "Déclaration de politique d'investissement (IPS, CFA Institute) · adéquation MiFID II art. 25(2)"),
     "O01": ("Caractère approprié — produits complexes",
             "Les options sont des produits complexes : il faut d'abord réussir le test de connaissances du "
             "profil investisseur (bouton « Mon profil investisseur » en haut du Trading Desk).",
@@ -267,6 +272,20 @@ def save_profile(prof: dict) -> bool:
 # ══════════════════════════════════════════════════════════════════════════════
 #  OUTILS
 # ══════════════════════════════════════════════════════════════════════════════
+def portfolio_profile(port: dict, profile: dict | None = None) -> dict:
+    """Profil appliqué aux ordres : celui de la politique d'investissement (IPS) du portefeuille
+    s'il en a une, sinon celui de l'utilisateur. Le test de connaissances options reste celui
+    de l'utilisateur (caractère approprié = connaissance de la personne)."""
+    base = profile or get_profile()
+    if port.get("ips"):
+        try:
+            from utils.committee import constraints
+            return {**base, "risque": constraints(port["ips"])["profil"], "defini": True}
+        except Exception:
+            pass
+    return base
+
+
 def restricted_reason(ticker: str) -> str | None:
     t = (ticker or "").upper().strip()
     if t in RESTRICTED_TICKERS:
@@ -353,7 +372,7 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
                    profile: dict | None = None, prices: dict | None = None,
                    price_source: str | None = None, category: str | None = None) -> Decision:
     d = Decision("spot")
-    profile = profile or get_profile()
+    profile = portfolio_profile(port, profile)
     risk = profile.get("risque", "Équilibré")
     lim = HARD_LIMITS.get(risk, HARD_LIMITS["Équilibré"])
     port_type = normalize_port_type(port)
@@ -368,7 +387,7 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
     if not profile.get("defini"):
         d.add("C09", "warn", "Profil par défaut « Équilibré » appliqué — remplissez « Mon profil investisseur ».")
     else:
-        d.add("C09", "ok", f"Profil {risk}")
+        d.add("C09", "ok", f"Profil {risk}" + (" (politique d'investissement du portefeuille)" if port.get("ips") else ""))
 
     # C01 — données
     src = price_source or _price_source(ticker)
@@ -448,6 +467,24 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
     # C08 — taille inhabituelle
     if nav > 0 and amount / nav > FAT_FINGER_SHARE:
         d.add("C08", "warn", f"Ordre = {amount / nav:.0%} de l'actif net.")
+
+    # P01 — politique d'investissement du portefeuille (avis CONSULTATIF du comité, ne bloque pas)
+    if buy and port.get("ips"):
+        try:
+            from utils import committee as CM
+            cons = CM.constraints(port["ips"])
+            why = CM.excluded_reason(ticker, cons["exclusions"])
+            if why:
+                d.add("P01", "warn", f"{ticker} relève d'une exclusion de votre politique ({why}).")
+            if "PEA" in cons["enveloppe"] and not CM.pea_eligible(ticker):
+                d.add("P01", "warn", f"{ticker} n'est pas éligible au PEA (enveloppe de ce portefeuille).")
+            if _is_crypto(ticker, category) and nav > 0:
+                crypto_after = (sum(v for t, v in snap["vals"].items() if _is_crypto(t)) + amount) / nav
+                if crypto_after > cons["crypto_max"] + 1e-9 and port_type not in THEMATIC_CRYPTO:
+                    d.add("P01", "warn", f"Crypto-actifs à {crypto_after:.0%} : au-delà des {cons['crypto_max']:.0%} "
+                                         "de votre politique d'investissement.")
+        except Exception:
+            pass
     return d
 
 
@@ -486,7 +523,7 @@ def pre_trade_options(port: dict, ticker: str, legs: list[dict], *, spot: float,
     from utils.option_strategies import analyze, usage_level, LEVEL_LABEL
 
     d = Decision("option")
-    profile = profile or get_profile()
+    profile = portfolio_profile(port, profile)
     risk = profile.get("risque", "Équilibré")
     lim = HARD_LIMITS.get(risk, HARD_LIMITS["Équilibré"])
     T = max(T_days, 1) / 365.0

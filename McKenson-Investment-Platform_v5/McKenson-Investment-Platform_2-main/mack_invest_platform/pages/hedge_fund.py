@@ -24,7 +24,7 @@ except Exception:
     _PLOTLY = False
 
 CYAN, GREEN, RED, VIOLET, GREY = "#00d4ff", "#00ff88", "#ff3b6b", "#7c3aed", "#94a3b8"
-from utils.legal import DISCLAIMER_SHORT as DISCLAIMER  # auteur, version et non-responsabilité
+DISCLAIMER = "Outil pédagogique d'aide à la décision sur une plateforme de simulation."
 
 _CSS = """
 <style>
@@ -565,11 +565,21 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
         emoji = c2.selectbox("Icône", _EMOJIS, key="hf_new_emoji")
         team_opts = {tid: f'{t.get("emoji", "🏢")} {t.get("name", tid)}' for tid, t in teams.items()}
         team_opts.setdefault("__solo__", "👤 Solo")
+        team_opts["__new__"] = "➕ Nouvelle équipe…"
         default_team = st.session_state.get("active_team")
         keys = list(team_opts)
         tid = c3.selectbox("Équipe", keys, format_func=lambda k: team_opts[k],
                            index=keys.index(default_team) if default_team in keys else 0, key="hf_new_team")
-        new_cfg = dict(name=name.strip() or f"Desk {profile}", emoji=emoji, tid=tid)
+        new_team = None
+        if tid == "__new__":
+            t1, t2 = st.columns([3, 1])
+            new_team = dict(name=t1.text_input("Nom de la nouvelle équipe", value="Équipe Desk",
+                                               key="hf_new_team_name").strip() or "Équipe Desk",
+                            emoji=t2.selectbox("Emblème", ["🦅", "🐂", "🐻", "🐋", "🦈", "🐺", "⚡", "🦁"],
+                                               key="hf_new_team_emoji"))
+            st.caption("Créer une autre équipe permet de comparer des portefeuilles construits avec des "
+                       "approches différentes (Dashboard → Performance comparée, regroupement par équipe).")
+        new_cfg = dict(name=name.strip() or f"Desk {profile}", emoji=emoji, tid=tid, new_team=new_team)
         port_label = f"{emoji} {new_cfg['name']}"
         projected = {t: w * capital for t, w in weights.items() if t != "BIL"}
         st.caption(f"Le portefeuille sera créé avec {_fmt_money(capital)} $ (champ « Capital » ci-dessus), "
@@ -609,7 +619,7 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
             st.warning("Le rééquilibrage complet vend les lignes qui ne font pas partie de l'allocation du desk.")
 
     # ── Couvertures par dérivés ───────────────────────────────────────────────
-    accepted = []
+    accepted, hedges = [], []
     if dest != dests[2]:
         st.markdown("##### 🛡️ Couvertures par produits dérivés")
         st.caption("Le desk ne s'arrête pas aux actifs : pour chaque exposition importante, il propose une option "
@@ -619,10 +629,48 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
         hedges = H.propose_hedges(H.exposures_from_values(projected), macro.factors, vix, nav)
         accepted = _hedge_cards(hedges, get_profile().get("options_ok", False))
 
-    # ── Validation humaine ────────────────────────────────────────────────────
+    # ── Validation par le comité virtuel (bloquante) ──────────────────────────
+    executing = dest != dests[2]
+    committee_rev, ips = None, None
+    if executing:
+        from utils import committee as CM
+        from components.committee_ui import render_ips_form, ips_summary, render_review, render_personas
+        st.markdown("##### 🧑‍⚖️ Validation par le comité MAM")
+        if dest == dests[0]:
+            ips = st.session_state.get("hf_ips") or CM.default_ips(profile)
+            if st.session_state.get("hf_ips_profile") != profile and not st.session_state.get("hf_ips_custom"):
+                ips = CM.default_ips(profile)
+            st.session_state["hf_ips"], st.session_state["hf_ips_profile"] = ips, profile
+        else:
+            ips = (port or {}).get("ips") or CM.default_ips(profile)
+        st.markdown("**Politique d'investissement :** " + ips_summary(ips)
+                    + ("" if dest == dests[0] or (port or {}).get("ips") else " _(par défaut : ce portefeuille n'a pas encore de politique)_"))
+        with st.expander("✏️ Adapter la politique d'investissement (horizon, perte maximale, exclusions…)"):
+            new_ips = render_ips_form("hf_ips_form", ips)
+            if new_ips:
+                if dest == dests[0]:
+                    st.session_state["hf_ips"], st.session_state["hf_ips_custom"] = new_ips, True
+                else:
+                    port["ips"] = new_ips
+                    from utils.data import persist
+                    persist()
+                st.rerun()
+        cash_proj = nav - sum(v for v in projected.values() if v > 0)
+        committee_rev = CM.review_portfolio(
+            projected, max(cash_proj, 0.0), ips, dict(px=None, macro=macro, cov=A.class_covariance(A.load_prices()[0]),
+                                                     data_sim=data_sim, vix=vix),
+            options=(port or {}).get("options", []) if dest == dests[1] else [],
+            options_ok=get_profile().get("options_ok", False), label=port_label,
+            hedges=[h for h in (hedges or []) if h["cle"] in accepted])
+        render_review(committee_rev)
+        with st.expander("🏛️ Comité de gestion MIP — l'équipe du desk"):
+            render_personas()
+        if committee_rev["verdict"] == "veto":
+            st.error("⛔ Le comité oppose son veto : exécution impossible. Baissez l'intensité tactique, changez de "
+                     "profil, ajoutez des couvertures ou adaptez la politique d'investissement.")
+
     st.markdown("##### Validation humaine")
     note = st.text_input("Commentaire (facultatif)", key="hf_note")
-    executing = dest != dests[2]
     confirm = True
     if executing:
         confirm = st.checkbox(f"Je confirme l'exécution simulée dans « {port_label} »"
@@ -636,7 +684,8 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
                  destination=dest, portefeuille=port_label, couvertures=accepted)
     b1, b2, b3 = st.columns([1.3, 1, 1.2])
     label = "✅ Valider et exécuter" if executing else "✅ Valider la proposition"
-    if b1.button(label, key="hf_ok", disabled=executing and not confirm):
+    vetoed = bool(committee_rev and committee_rev["verdict"] == "veto")
+    if b1.button(label, key="hf_ok", disabled=executing and (not confirm or vetoed)):
         if not executing:
             msg = A.append_journal(entry | dict(decision="validée"))
             st.success("Proposition validée et inscrite au journal.")
@@ -647,7 +696,9 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
             st.error("⛔ Exécution bloquée par le moteur de risque : données de marché simulées. "
                      "La proposition est inscrite au journal.")
         else:
-            _execute(dest == dests[0], new_cfg, port, weights, mode, pct, accepted, macro, vix, entry, teams)
+            entry["comite"] = committee_rev["verdict"] if committee_rev else None
+            _execute(dest == dests[0], new_cfg, port, weights, mode, pct, accepted, macro, vix, entry, teams,
+                     ips=ips, committee_rev=committee_rev)
     if b2.button("❌ Rejeter", key="hf_ko"):
         msg = A.append_journal(entry | dict(decision="rejetée"))
         st.info("Proposition rejetée et inscrite au journal.")
@@ -657,11 +708,11 @@ def _render_execution(final: pd.Series, allowed: bool, data_sim: bool, macro, pr
                                "Poids": final.round(4).values, "Montant": (final * capital).round(2).values})
     b3.download_button("⬇️ Ordres (CSV)", orders_csv.to_csv(index=False).encode("utf-8"),
                        f"ordres_desk_{datetime.now():%Y%m%d}.csv", "text/csv", key="hf_csv")
-    st.caption(DISCLAIMER)
 
 
 def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series, mode: str, pct: float,
-             accepted: list[str], macro, vix, entry: dict, teams: dict):
+             accepted: list[str], macro, vix, entry: dict, teams: dict, ips: dict | None = None,
+             committee_rev: dict | None = None):
     import uuid
     from utils.data import persist, get_multi_prices
     from utils.auto_portfolio import plan_orders, execute_orders
@@ -669,6 +720,11 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
 
     if is_new:
         tid = new_cfg["tid"]
+        if tid == "__new__":
+            tid = "T" + uuid.uuid4().hex[:6].upper()
+            nt = new_cfg.get("new_team") or {}
+            teams[tid] = {"id": tid, "name": nt.get("name", "Équipe Desk"), "emoji": nt.get("emoji", "🦅"),
+                          "portfolios": {}}
         if tid not in teams:
             teams[tid] = {"id": tid, "name": "Solo", "emoji": "👤", "portfolios": {}}
         pid = "P" + uuid.uuid4().hex[:6].upper()
@@ -680,6 +736,11 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
         teams[tid]["portfolios"][pid] = port
         st.session_state["_select_portfolio"] = (tid, pid)
         mode, pct = "cash", 1.0
+    if ips:
+        port["ips"] = ips
+    if committee_rev:
+        from utils.committee import summary_for_storage
+        port["committee"] = summary_for_storage(committee_rev)
     live = get_multi_prices(tuple(sorted(set(weights.index) | set(port.get("holdings", {})))))
     orders = plan_orders(port, weights, live, pct, mode)
     errs = execute_orders(port, orders, tag="Hedge Fund Agent") if not orders.empty else []
@@ -720,8 +781,10 @@ def render():
         'un moteur de risque déterministe a le dernier mot, et rien n\'est exécuté sans votre validation.</div>'
         '<div style="margin-top:8px">'
         + "".join(f'<span class="hf-role">{r}</span>' for r in
-                  ["1 · Données", "2 · Veille actualités", "3 · Macro & régime", "4 · Stratège",
-                   "5 · Risque (veto)", "6 · Conseiller", "7 · Validation & journal"])
+                  ["🌦️ Taux-Bas · Macro & Régimes", "🧮 Algo-Rithme · Signaux & ML",
+                   "🏛️ Balancement · Ordres & Stratégie", "🛡️ De Marge · Garde-fou & Limites (veto)",
+                   "⚖️ Probité · Conformité (veto)", "🎙️ Eting-Financier · Reporting & Biais",
+                   "✅ Vous · Décision finale"])
         + "</div></div>", unsafe_allow_html=True)
 
     top = st.columns([1, 1, 4])

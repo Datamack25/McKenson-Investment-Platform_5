@@ -1,5 +1,10 @@
 """
-jobs/weekly_report.py — Rapport hebdomadaire PNG + alertes, exécuté par GitHub Actions
+jobs/weekly_report.py — Rapport hebdomadaire du COMITÉ (PNG + PDF) + alertes, exécuté par GitHub Actions
+
+Pour chaque portefeuille suivi, le comité virtuel (Jean-Michel TAUX-BAS, Mc Henson ALGO-RITHME, Thierry BALANCEMENT,
+Aline DE MARGE, Constance Probité, Marc ETING-FINANCIER) examine le portefeuille RÉEL (base MAM :
+lignes, liquidités, options, politique d'investissement) et envoie son rapport : graphique vs marché,
+avis de chaque professionnel, synthèse et recommandations, décisions à prendre.
 
     python -m jobs.weekly_report --mode auto      # alertes chaque jour, rapport le lundi
     python -m jobs.weekly_report --mode weekly    # force le rapport hebdomadaire
@@ -26,6 +31,7 @@ from utils import advisor as A  # noqa: E402
 from utils import alerts as AL  # noqa: E402
 from utils import portfolio_manager as PM  # noqa: E402
 from utils.report_png import build_weekly_png  # noqa: E402
+from utils import committee_report as CR  # noqa: E402
 
 FAILURES = []
 SEV_MIN = {"critique": 3, "important": 2, "info": 1}
@@ -43,6 +49,73 @@ def load_context():
     critical = {"SPY", "^VIX", "^TNX", "^IRX"}
     data_sim = len(missing) >= len(A.ALL_TICKERS) * 0.6 or bool(critical & set(missing))
     return (px, missing, news, news_sim, macro, cov, data_sim)
+
+
+def load_mam_portfolio(user_key: str, name: str) -> tuple[dict | None, bool]:
+    """Portefeuille MAM du propriétaire (e-mail ou identifiant) + test options validé ?"""
+    import json
+    conn = None
+    try:
+        conn = A._connect()
+        if conn is None:
+            return None, False
+        with conn.cursor() as cur:
+            cur.execute("""SELECT p.id, p.name, p.emoji, p.strategy, p.cash, p.initial_cash, p.holdings, p.options,
+                                  p.trades, p.ips, u.investor_profile
+                           FROM mam_portfolios p JOIN mam_users u ON u.id = p.user_id
+                           WHERE p.name = %s AND (u.email = %s OR u.username = %s)
+                           ORDER BY p.updated_at DESC LIMIT 1""", (name, user_key, user_key))
+            row = cur.fetchone()
+        if not row:
+            return None, False
+        dec = lambda v, d: (json.loads(v) if isinstance(v, str) else v) if v is not None else d
+        port = dict(id=row[0], name=row[1], emoji=row[2], strategy=row[3], cash=float(row[4] or 0),
+                    initial_cash=float(row[5] or 0), holdings=dec(row[6], {}), options=dec(row[7], []),
+                    trades=dec(row[8], []), ips=dec(row[9], None))
+        prof = dec(row[10], {}) or {}
+        return port, bool(prof.get("options_ok"))
+    except Exception as e:
+        log(f"Lecture du portefeuille {name} impossible : {e}")
+        return None, False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def committee_job(email: str, user_key: str, name: str, profile: str, holdings_snapshot: dict,
+                  committee_ctx: dict, out_dir: Path, dry_run: bool):
+    """Rapport du comité pour un portefeuille suivi."""
+    from utils.data import get_multi_prices
+    port, options_ok = load_mam_portfolio(user_key, name)
+    if port is None:  # repli : copie des lignes enregistrée lors de l'abonnement ({ticker: valeur $})
+        snap = dict(holdings_snapshot or {})
+        cash = float(snap.pop("CASH", 0.0))
+        port = dict(id=None, name=name, cash=cash, initial_cash=cash + sum(snap.values()),
+                    holdings={t: {"qty": float(v), "avg_price": 1.0} for t, v in snap.items()},
+                    options=[], trades=[], ips=None)
+        live = {}
+        log(f"{name} : portefeuille MAM introuvable, copie de l'abonnement utilisée")
+    else:
+        live = get_multi_prices(tuple(sorted(port["holdings"]))) if port["holdings"] else {}
+    out = CR.build_for_portfolio(port, committee_ctx, live, options_ok, "S&P 500", profile or "Équilibré")
+    stem = f"comite_{name.replace(' ', '_')}_{datetime.now():%Y%m%d}"
+    (out_dir / f"{stem}.png").write_bytes(out["png"])
+    (out_dir / f"{stem}.pdf").write_bytes(out["pdf"])
+    log(f"Rapport du comité généré : {stem} — verdict {out['review']['verdict']}")
+    if dry_run or not email:
+        return
+    err = AL.send_email(email, f"🧑‍⚖️ Rapport hebdomadaire du comité MAM — {name} — {datetime.now():%d/%m/%Y}",
+                        out["html"], [(f"{stem}.png", out["png"], "image/png"),
+                                      (f"{stem}.pdf", out["pdf"], "application/pdf")])
+    log(f"Rapport du comité → {email} : {'OK' if not err else err}")
+    if err:
+        FAILURES.append(err)
+    err = AL.send_telegram(f"Rapport du comité MAM — {name} — {out['review']['verdict_label']}", out["png"])
+    if err != "Telegram non configuré":
+        log(f"Telegram : {'OK' if not err else err}")
 
 
 def main():
@@ -120,15 +193,20 @@ def main():
         if sent_ids:
             AL.mark_notified(list(sent_ids))
 
-    # ── Rapport hebdomadaire PNG ──────────────────────────────────────────────
+    # ── Rapport hebdomadaire du comité (un par portefeuille suivi) ───────────
     if weekly:
-        jobs = []
-        for s in subs:
-            if s["weekly"] and s["email"]:
-                R = reviews.get((s["user_key"], s["portfolio_name"]))
-                jobs.append((s["email"], s["portfolio_name"], s["profile"] or "Équilibré", R))
-        if not jobs:
-            jobs.append((os.environ.get("REPORT_TO"), "Desk MAM", "Équilibré", None))
+        committee_ctx = dict(px=px, missing=missing, news=news, news_sim=news_sim, macro=macro, cov=cov,
+                             data_sim=data_sim, vix=(macro.indicators or {}).get("vix"))
+        followed = [s for s in subs if s["weekly"] and s["email"]]
+        for s in followed:
+            try:
+                committee_job(s["email"], s["user_key"], s["portfolio_name"], s["profile"], s["holdings"],
+                              committee_ctx, out_dir, args.dry_run)
+            except Exception as e:
+                log(f"Rapport du comité impossible pour {s['portfolio_name']} : {e}")
+                FAILURES.append(str(e))
+        # Aucun portefeuille suivi : rapport macro du desk (comme avant)
+        jobs = [] if followed else [(os.environ.get("REPORT_TO"), "Desk MAM", "Équilibré", None)]
         for email, name, profile, R in jobs:
             rel = [a for a in alerts if a["categorie"] != "Portefeuille" or a["titre"].startswith(name + " ·")]
             png = build_weekly_png(macro, news, rel, R, name=name, profile=profile, hist=hist, data_sim=data_sim)

@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="MAM — McKenson Asset Management · v5.2",
+    page_title="MAM — McKenson Asset Management · v5.3",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -58,6 +58,10 @@ html, body, [data-testid="stApp"] {
 .ticker-track.news-track {
     animation: ticker-scroll 90s linear infinite;
 }
+
+/* Pause du défilement au survol : on peut lire un cours ou un titre */
+.ticker-band:hover .ticker-track { animation-play-state: paused; }
+.ticker-band { cursor: default; }
 
 @keyframes ticker-scroll {
     0%   { transform: translateX(0); }

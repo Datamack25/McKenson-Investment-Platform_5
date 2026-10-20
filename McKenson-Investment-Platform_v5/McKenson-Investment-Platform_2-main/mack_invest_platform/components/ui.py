@@ -65,6 +65,7 @@ div[data-testid="stVerticalBlock"]{gap:.4rem}
 .ban-sep{color:#0d2030;padding:0 3px}
 .tick-up{color:#00ff88}.tick-down{color:#ff3b6b}
 @keyframes mam-run{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.ban-scroll:hover .ban-strip{animation-play-state:paused}
 header[data-testid="stHeader"]{z-index:1!important;background:transparent!important}
 </style>
 """

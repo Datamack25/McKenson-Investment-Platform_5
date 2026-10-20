@@ -69,13 +69,6 @@ def page_header(title: str, subtitle: str, color: str = "#00d4ff"):
         f'color:{color};margin:0 0 2px;text-shadow:0 0 30px {color}66;">{title}</h1>'
         f'<div style="font-family:Share Tech Mono,monospace;font-size:.72rem;color:#7a93b0;'
         f'margin-bottom:10px;">{subtitle}</div>', unsafe_allow_html=True)
-    # Avertissement modèles quantitatifs + auteur / version / non-responsabilité
-    try:
-        from utils.legal import render_risk_banner, render_legal_notice
-        render_risk_banner("ia")
-        render_legal_notice(compact=True)
-    except Exception:
-        pass
 
 
 def source_banner(intel: dict, news: dict):

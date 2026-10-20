@@ -412,8 +412,35 @@ def _tab_apply(ctx):
                 f'après ≈ <b>{port.get("cash", 0) + sell - buy:,.0f} $</b></div>', unsafe_allow_html=True)
     if not mode.startswith("Investir"):
         st.warning("Le rééquilibrage complet vend les positions spot qui ne font pas partie de l'allocation cible.")
-    confirm = st.checkbox("Je confirme l'exécution simulée de ces ordres", key="auto_apply_ok")
-    if st.button("🚀 EXÉCUTER LES ORDRES", disabled=not confirm, use_container_width=True, key="auto_apply_go"):
+    # ── Validation par le comité virtuel (bloquante) sur le portefeuille obtenu ──
+    vetoed = False
+    try:
+        from utils import committee as CM
+        from utils.compliance import get_profile, normalize_port_type
+        from components.committee_ui import get_context, render_review, portfolio_values
+        vals, cash0, _ = portfolio_values(port)
+        proj = dict(vals)
+        for _, o in orders.iterrows():
+            proj[o["ticker"]] = proj.get(o["ticker"], 0.0) + (o["montant"] if o["action"] == "BUY" else -o["montant"])
+        proj = {t: v for t, v in proj.items() if v > 1}
+        nav0 = cash0 + sum(vals.values())
+        ips = port.get("ips") or CM.default_ips(get_profile().get("risque", "Équilibré"))
+        with st.expander("🧑‍⚖️ Avis du comité MAM sur le portefeuille obtenu", expanded=True):
+            rev = CM.review_portfolio(proj, max(nav0 - sum(proj.values()), 0.0), ips, get_context(),
+                                      options=port.get("options", []), options_ok=get_profile().get("options_ok", False),
+                                      port_type=normalize_port_type(port), label=ports[pid][0])
+            render_review(rev)
+        vetoed = rev["verdict"] == "veto"
+        if vetoed:
+            st.error("⛔ Le comité oppose son veto à ce portefeuille : exécution impossible. Choisissez un profil plus "
+                     "prudent, investissez une part plus faible, ou utilisez 📈 Optimizer → « Optimisation par le comité ».")
+    except Exception as e:
+        rev = None
+        st.caption(f"Avis du comité indisponible ({e}).")
+    confirm = st.checkbox("Je confirme l'exécution simulée de ces ordres", key="auto_apply_ok", disabled=vetoed)
+    if st.button("🚀 EXÉCUTER LES ORDRES", disabled=not confirm or vetoed, use_container_width=True, key="auto_apply_go"):
+        if rev:
+            port["committee"] = CM.summary_for_storage(rev)
         errs = execute_orders(port, orders.drop(columns=["conformité"], errors="ignore"))
         persist()
         if errs:

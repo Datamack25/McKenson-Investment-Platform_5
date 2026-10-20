@@ -464,9 +464,14 @@ def port_vol(w: pd.Series, cov: pd.DataFrame) -> float:
 
 
 def risk_engine(w: pd.Series, profile: str, factors: dict, cov: pd.DataFrame,
-                data_simulated: bool) -> tuple[pd.Series, list[dict], bool]:
-    """Applique les limites. Renvoie (poids corrigés, contrôles, exécution autorisée ?)."""
+                data_simulated: bool, overrides: dict | None = None) -> tuple[pd.Series, list[dict], bool]:
+    """Applique les limites. Renvoie (poids corrigés, contrôles, exécution autorisée ?).
+    overrides : limites plus strictes issues de la politique d'investissement (IPS) du
+    portefeuille — chaque valeur ne peut que resserrer la limite du profil."""
     lim = dict(LIMITS[profile])
+    for k, v in (overrides or {}).items():
+        if k in lim and v is not None:
+            lim[k] = max(lim[k], v) if k == "cash" else min(lim[k], v)
     w = w.reindex(CLASSES).fillna(0).copy()
     checks = []
 
