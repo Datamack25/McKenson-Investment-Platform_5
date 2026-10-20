@@ -1,0 +1,17 @@
+id,headline,scope,move,effect_type,start_dt,end_dt,active
+1,Recession warning,broad,-0.06,price_mult,2026-05-06 13:36,2026-05-06 15:45,true
+2,Oil supply disruption,commodity,+0.08,price_mult,2026-05-06 13:36,2026-05-06 16:00,true
+3,Brussels Accidentally Publishes the 800-Page AI Tax Annex,equity,-0.04,price_mult,2026-05-06 11:28,2026-05-06 14:00,true
+4,Investors Buy Safe Assets,bond,+0.05,price_mult,2026-05-06 10:00,2026-05-06 12:00,false
+5,Asia Risk-Off Flash,broad,-0.06,price_mult,2026-05-06 02:15,2026-05-06 10:00,false
+6,Japan FX intervention - yen rebound,JPY=X,-0.04,price_mult,2026-05-05,2026-05-08,true
+7,ECB hawkish repricing - EUR strength,EURUSD=X,+0.03,price_mult,2026-05-05,2026-05-12,true
+8,Silver volatility spike,SI=F,+0.08,price_mult,2026-05-05,2026-05-09,true
+9,Gold safe-haven bid,GC=F,+0.06,price_mult,2026-05-05,2026-05-09,true
+10,Leveraged Ether ETF deleveraging,ETHU,-0.25,price_mult,2026-05-05,2026-05-08,true
+11,Crypto liquidation wave,crypto,-0.15,price_mult,2026-05-05,2026-05-08,true
+12,Defence stocks profit-taking,RHM.DE,-0.08,price_mult,2026-05-05,2026-05-10,true
+13,Cocoa price crash after supply normalization,CC=F,-0.12,price_mult,2026-05-05,2026-05-12,true
+14,Hormuz oil supply shock - Micro WTI,MCL=F,+0.10,price_mult,2026-05-05,2026-05-12,true
+15,Hormuz oil supply shock WTI,CL=F,+0.10,price_mult,2026-05-05,2026-05-12,true
+16,Hormuz oil supply shock Brent,BZ=F,+0.12,price_mult,2026-05-05,2026-05-12,true
