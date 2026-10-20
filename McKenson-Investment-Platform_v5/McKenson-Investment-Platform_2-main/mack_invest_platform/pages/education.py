@@ -45,10 +45,13 @@ def _concept_card(title: str, body: str, icon: str = "📖", color: str = "#00d4
 
 
 def _formula_box(formula: str, label: str = ""):
+    # libellé construit hors de la f-string : compatible Python 3.11 (pas de « \\ » dans une expression f-string)
+    label_html = ('<div style="font-family:Rajdhani;font-size:.65rem;color:#7a93b0;margin-bottom:4px;">'
+                  + label + "</div>") if label else ""
     st.markdown(
         f'<div style="background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.25);'
         f'border-radius:6px;padding:12px 18px;margin:8px 0;text-align:center;">'
-        f'{"<div style=\\'font-family:Rajdhani;font-size:.65rem;color:#7a93b0;margin-bottom:4px;\\'>" + label + "</div>" if label else ""}'
+        f'{label_html}'
         f'<div style="font-family:Share Tech Mono;font-size:.9rem;color:#a78bfa;">{formula}</div>'
         f'</div>', unsafe_allow_html=True)
 
