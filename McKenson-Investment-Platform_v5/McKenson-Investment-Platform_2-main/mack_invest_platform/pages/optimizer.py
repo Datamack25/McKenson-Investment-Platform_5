@@ -313,6 +313,7 @@ def _committee_optimizer():
                      + (f" et de {len(accepted)} couverture(s)" if accepted else ""), key="cmo_ok", disabled=blocked)
     if st.button("🚀 APPLIQUER LE PLAN DU COMITÉ", key="cmo_go", disabled=blocked or not ok,
                  use_container_width=True, type="primary"):
+        n_before = len(port.get("trades", []) or [])
         errs = execute_orders(port, opt["ordres"].drop(columns=["motif"], errors="ignore"),
                               tag="Comité MAM — optimisation") if not opt["ordres"].empty else []
         done, herrs = [], []
@@ -326,6 +327,12 @@ def _committee_optimizer():
                     (herrs.append(e) if e else done.append(h["panier"]))
         port["committee"] = CM.summary_for_storage(after)
         persist()
+        try:  # journal des écarts recommandation / exécution (v5.4)
+            from utils.execution_log import record_execution
+            record_execution(port, "Comité MAM — optimisation", opt["ordres"], n_before, errs + herrs,
+                             target_weights=opt["cible_lignes"], hedges_done=done)
+        except Exception:
+            pass
         st.session_state.pop("cmo_out", None)
         st.success(f"✅ Plan appliqué : {len(opt['ordres']) - len(errs)} ordre(s)"
                    + (f", couvertures : {', '.join(done)}" if done else "") + ". Le portefeuille est validé par le comité.")

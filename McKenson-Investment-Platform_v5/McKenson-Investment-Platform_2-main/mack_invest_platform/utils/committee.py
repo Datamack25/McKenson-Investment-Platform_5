@@ -642,6 +642,11 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
     cons = constraints(ips)
     pm, prof = cons["perte_max"], cons["profil"]
     vol = STRATEGY_VOL.get(strategy_id, .15)
+    try:  # volatilité calibrée sur l'historique, si un administrateur l'a appliquée (v5.4)
+        from utils.calibration import active_strategy_vol
+        vol = active_strategy_vol(strategy_id, vol)
+    except Exception:
+        pass
     v1 = 1.645 * vol
     sname = STRATEGY_TYPE.get(strategy_id, strategy_id)
     obj = _idx(ips, "objectif", 2)

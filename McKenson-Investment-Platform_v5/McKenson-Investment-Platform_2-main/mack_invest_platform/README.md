@@ -1,13 +1,35 @@
-📈 McKenson Investment Platform - MIP — version 5.3.0
+📈 McKenson Investment Platform - MIP — version 5.4.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.3.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.4.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.4 — Calibration sur l'historique (lot 1 de la feuille de route)
+
+Onglet **🧪 Calibration** du Hedge Fund Agent : les hypothèses d'expert sont confrontées à 10 ans d'historique réel.
+
+- **Matrice de sensibilité** estimée par régression (ridge) des rendements hebdomadaires des classes sur les variations des facteurs, avec statistiques t, stabilité sur fenêtres de 3 ans et désaccords avec l'expert ; application possible en matrice mixte (poids réglable).
+- **Volatilité typique des stratégies** (revue de création du comité) mesurée sur un panier d'ETF représentatif.
+- **Couvertures** : multiplicateur de volatilité (vol réalisée / VIX), choc de référence (5 % des pires rendements à 3 mois) et part couverte reliée à la probabilité historique d'une forte baisse (régression logistique).
+- **Seuils d'alerte** choisis pour une fréquence cible par gravité.
+
+Jamais de calibration sur données simulées. Seul un administrateur applique une calibration (enregistrée dans `hedge_fund_state`, utilisée aussi par le traitement planifié) ; bouton de retour aux hypothèses d'expert.
+
+Lot 2 — Performance et suivi :
+- **Options dans la NAV reconstituée** : prime à l'ouverture, valeur Black-Scholes quotidienne, valeur intrinsèque figée à l'échéance ; la comparaison avec le marché couvre donc tout le portefeuille.
+- **Attribution de performance** (Dashboard) par classe d'actifs face à l'allocation stratégique du profil : effets allocation, sélection, interaction (Brinson-Fachler, lissage de Carino), options et négociation ; écart de suivi et ratio d'information.
+- **Journal des écarts recommandation / exécution** (onglet Journal) : chaque plan exécuté (Hedge Fund Agent, optimisation du comité, Auto-Portefeuille) est comparé ligne par ligne aux ordres réellement passés (bloqués, partiels, cash), puis à la composition actuelle (dérive).
+- **Backtest walk-forward du desk** (onglet Calibration & Backtest) : desk complet vs allocation stratégique vs stratégique + moteur de risque, par régime et par année, coûts inclus.
+
+Lot 3 — Actualité et fiabilité :
+- **Tonalité des titres** (lexique financier français / anglais inspiré de Loughran-McDonald, négations, sens des mots « hausse / baisse » selon ce qui monte) : tonalité par thème, par titre et **par classe d'actifs** dans le Briefing ; reprise dans les alertes d'actualité.
+- **Contrôle continu des données** (utils/data_quality.py) : séries simulées, cotations anciennes, cours figés, sauts suspects, valeurs nulles, trous, veille indisponible. Exécuté chaque jour ouvré par le traitement planifié (alerte « Données » si problème) et à la demande dans Administration → 🩺 Qualité des données.
+- **Tests automatisés** (dossier `tests/`, 60 tests sans réseau ni base) : conformité, comité, risque, calibration, performance et attribution, backtest, journal des écarts, sentiment, qualité des données, secteurs, fumée des pages. Lancement : `python -m pytest -q` ; sur GitHub : workflow `.github/workflows/tests.yml` à chaque envoi de code.
 
 Nouveautés v5.3 — Comité d'investissement virtuel
 🧑‍⚖️ Six professionnels VIRTUELS (personnages fictifs) examinent chaque portefeuille (utils/committee.py) :
@@ -256,6 +278,11 @@ eslsca_platform/
 │   ├── compliance.py       # v5.1 contrôles de conformité pré-négociation, profil investisseur, journal d'audit
 │   ├── option_strategies.py# v5.1 stratégies d'options multi-jambes selon le régime de marché
 │   ├── etf_universe.py     # v5.1 métadonnées ETF et portefeuilles modèles 100 % ETF
+│   ├── backtest_desk.py    # v5.4 backtest walk-forward du desk complet
+│   ├── calibration.py      # v5.4 calibration des hypothèses sur 10 ans d'historique
+│   ├── execution_log.py    # v5.4 journal des écarts recommandation / exécution
+│   ├── data_quality.py     # v5.4 contrôle continu des données
+│   ├── sentiment.py        # v5.4 tonalité des titres et pertinence par classe
 │   ├── committee.py        # v5.3 comité virtuel, IPS, avis, validation, optimisation
 │   ├── committee_report.py # v5.3 rapport du comité (PNG + PDF + e-mail)
 │   ├── risk_hull.py        # v5.3 VaR, ES, EWMA, Euler, Kupiec, stress tests (J. Hull)
@@ -264,6 +291,7 @@ eslsca_platform/
 │   └── legal.py            # v5.1 auteur, version, avertissements (source unique)
 └── components/
     ├── ai_shared.py        # chargement en cache du modèle, KPI, en-têtes des pages IA
+    ├── calibration_ui.py   # v5.4 onglet Calibration du Hedge Fund Agent
     ├── committee_ui.py     # v5.3 cartes du comité, questionnaire IPS, panneau de validation
     ├── ui.py               # CSS theme, ticker strip, news banner
     └── webui.py            # Habillage page web : en-tête, onglets, bandeau compte, footer
@@ -276,4 +304,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.3.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.4.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

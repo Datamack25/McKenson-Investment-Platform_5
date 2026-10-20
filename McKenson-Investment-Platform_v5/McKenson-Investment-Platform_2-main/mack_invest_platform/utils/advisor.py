@@ -271,7 +271,7 @@ def load_news():
         uniq.sort(key=lambda x: x["date"], reverse=True)
         themes[key] = dict(label=th["label"], factor=th["factor"],
                            intensity=float(min(100, score * 2.2)),
-                           count=len(uniq), headlines=uniq[:6])
+                           count=len(uniq), headlines=uniq[:6], _all=uniq[:60])
     simulated = failures >= len(NEWS_THEMES) * 0.7
     if simulated:
         rng = np.random.default_rng(3)
@@ -279,6 +279,12 @@ def load_news():
             themes[key] = dict(label=th["label"], factor=th["factor"],
                                intensity=float(rng.uniform(20, 70)), count=0,
                                headlines=[])
+    try:  # tonalité des titres (lexique financier FR + EN, v5.4)
+        from utils.sentiment import enrich
+        themes = enrich(themes)
+    except Exception:
+        for t in themes.values():
+            t.pop("_all", None)
     return themes, simulated
 
 
@@ -413,13 +419,23 @@ def classify_regime(f: dict) -> tuple[str, str]:
 # ══════════════════════════════════════════════════════════════════════════════
 # Rôle 4 — Stratège : allocation proposée
 # ══════════════════════════════════════════════════════════════════════════════
+def sensitivity() -> pd.DataFrame:
+    """Matrice active : expert, ou mixte expert / estimée si un administrateur a appliqué
+    une calibration (utils.calibration, v5.4)."""
+    try:
+        from utils.calibration import active_sensitivity
+        return active_sensitivity()
+    except Exception:
+        return SENSITIVITY
+
+
 def class_scores(factors: dict) -> pd.Series:
     f = pd.Series(factors)[F_KEYS]
-    return SENSITIVITY.dot(f)
+    return sensitivity().dot(f)
 
 
 def explain_class(cls: str, factors: dict, top: int = 3) -> list[str]:
-    contrib = SENSITIVITY.loc[cls] * pd.Series(factors)[F_KEYS]
+    contrib = sensitivity().loc[cls] * pd.Series(factors)[F_KEYS]
     contrib = contrib[contrib.abs() > 0.05].sort_values(key=lambda s: -s.abs())
     out = []
     for k, c in contrib.head(top).items():
@@ -650,7 +666,7 @@ def advise_portfolio(holdings: dict, macro: MacroView, profile: str, target: pd.
                        "Garder du cash permet de saisir les opportunités en cas de baisse."))
 
     # 3. Expositions aux facteurs × situation actuelle = vulnérabilités
-    expo = SENSITIVITY.T.dot(cls_w.reindex(CLASSES).fillna(0))
+    expo = sensitivity().T.dot(cls_w.reindex(CLASSES).fillna(0))
     risk = (expo * pd.Series(macro.factors)).sort_values()
     for k, r in risk.items():
         if r < -0.25:

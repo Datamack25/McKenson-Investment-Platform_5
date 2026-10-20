@@ -81,7 +81,7 @@ def describe_move(mv: dict) -> str:
     sens = "se renforce" if d > 0 else "se détend"
     if k in ("croissance", "credit"):
         sens = "s'améliore" if d > 0 else "se dégrade"
-    impact = A.SENSITIVITY[k] * np.sign(d)
+    impact = A.sensitivity()[k] * np.sign(d)
     gagnants = ", ".join(impact.sort_values(ascending=False).index[:2])
     perdants = ", ".join(impact.sort_values().index[:2])
     return (f"{mv['label']} {sens} ({mv['avant']:+.1f} → {mv['maintenant']:+.1f}). "
@@ -109,7 +109,7 @@ def class_views(macro, target: pd.Series, profile: str, data_simulated: bool) ->
     f = pd.Series(macro.factors)[A.F_KEYS]
     rows = []
     for c in A.CLASSES:
-        contrib = A.SENSITIVITY.loc[c] * f
+        contrib = A.sensitivity().loc[c] * f
         score = float(contrib.sum())
         nz = contrib[contrib.abs() > 0.05]
         agree = float((np.sign(nz) == np.sign(score)).mean()) if len(nz) else 0.0

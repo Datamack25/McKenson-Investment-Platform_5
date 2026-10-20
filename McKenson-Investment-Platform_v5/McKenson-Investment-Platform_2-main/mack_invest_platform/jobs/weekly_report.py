@@ -139,6 +139,15 @@ def main():
     hist = PM.factor_history(px, news)
     prev_news = AL.get_state("news_intensity") or {}
 
+    # ── Contrôle continu de la qualité des données (v5.4) ────────────────────
+    from utils import data_quality as DQ
+    dq = DQ.run_checks(px, missing, news, news_sim, A.ALL_TICKERS)
+    log(f"Qualité des données : {dq['statut']} — {dq['n_problemes']} remarque(s) sur {dq['n_series']} séries")
+    for i in dq["problemes"][:12]:
+        log(f"   [{i['gravite']}] {i['serie']} : {i['probleme']} — {i['detail']}")
+    if not args.dry_run:
+        DQ.save(dq)
+
     subs = AL.subscriptions()
     log(f"{len(subs)} portefeuille(s) suivi(s)")
     reviews, port_alerts_input = {}, []
@@ -153,6 +162,9 @@ def main():
     alerts = AL.compute_alerts(px, missing, news, news_sim, macro, hist, prev_news, port_alerts_input)
     if data_sim:  # pas d'alerte de marché sur données simulées
         alerts = [a for a in alerts if a["regle"] == "actualite"]
+    dq_alert = DQ.to_alert(dq)
+    if dq_alert:
+        alerts.append(dq_alert)
     log(f"{len(alerts)} alerte(s) détectée(s)")
     new_alerts = AL.save_alerts(alerts) if not args.dry_run else alerts
     if not news_sim and not args.dry_run:

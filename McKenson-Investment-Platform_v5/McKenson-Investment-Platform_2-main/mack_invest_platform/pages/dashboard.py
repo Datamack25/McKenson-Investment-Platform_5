@@ -455,7 +455,8 @@ def _performance_panel(all_ports: list):
     from utils import performance as PF
 
     cands = [it for it in all_ports if any(str(t.get("action", "")).upper() in ("BUY", "SELL")
-                                           for t in it["port"].get("trades", []) or [])]
+                                           for t in it["port"].get("trades", []) or [])
+             or it["port"].get("options")]
     if not cands:
         return
     st.markdown("<br>", unsafe_allow_html=True)
@@ -561,8 +562,65 @@ def _performance_panel(all_ports: list):
         f"{bench_name} ({'disponible' if len(bench.dropna()) >= 2 else 'indisponible'}). "
         "Bêta > 1 : le portefeuille amplifie les mouvements du marché ; surperformance = performance du "
         "portefeuille − performance de l'indice sur la même période ; ratio d'information = surperformance "
-        "annualisée / écart de suivi. NAV reconstituée à partir des achats / ventes au comptant (options neutralisées). "
+        "annualisée / écart de suivi. NAV reconstituée à partir des achats / ventes au comptant et des options "
+        "(prime à l'ouverture, valeur Black-Scholes chaque jour, valeur intrinsèque à l'échéance). "
         "Les indicateurs annualisés nécessitent au moins 5 jours de cotation.")
+
+
+def _attribution_panel(all_ports: list):
+    """Attribution de performance et écart de suivi par rapport à l'allocation stratégique (v5.4)."""
+    import plotly.graph_objects as go
+    from utils import performance as PF
+    from utils import advisor as A
+    cands = [it for it in all_ports if any(str(t.get("action", "")).upper() in ("BUY", "SELL")
+                                           for t in it["port"].get("trades", []) or []) or it["port"].get("options")]
+    if not cands:
+        return
+    st.markdown("<br>", unsafe_allow_html=True)
+    section_title("ATTRIBUTION DE PERFORMANCE — VS ALLOCATION STRATÉGIQUE", "🧮")
+    labels = {f'{it["port"].get("emoji", "📁")} {it["port"]["name"]} · {it["team_label"]}': it["port"] for it in cands}
+    c1, c2 = st.columns([3, 1.3])
+    lab = c1.selectbox("Portefeuille", list(labels), key="attr_port")
+    port = labels[lab]
+    prof0, origin = PF.portfolio_profile_name(port)
+    prof = c2.selectbox("Allocation stratégique de référence", list(A.PROFILES), key="attr_prof",
+                        index=list(A.PROFILES).index(prof0) if prof0 in A.PROFILES else 1,
+                        help=f"Par défaut : profil issu de la {origin}.")
+    with st.spinner("Attribution en cours…"):
+        res = PF.attribution(port, profile=prof)
+    if not res.get("ok"):
+        st.info(res.get("detail", "Attribution indisponible."))
+        return
+    k = st.columns(5)
+    k[0].metric("Portefeuille", f"{res['perf_portefeuille']:+.2%}")
+    k[1].metric(f"Allocation stratégique {prof}", f"{res['perf_strategique']:+.2%}")
+    k[2].metric("Écart de performance", f"{res['ecart']:+.2%}")
+    k[3].metric("Écart de suivi (ann.)", "—" if pd.isna(res["tracking_error"]) else f"{res['tracking_error']:.2%}")
+    k[4].metric("Ratio d'information", "—" if pd.isna(res["ratio_information"]) else f"{res['ratio_information']:.2f}")
+    e = res["effets"]
+    e = e[(e[["Allocation", "Sélection", "Interaction"]].abs().sum(axis=1) > 1e-6) | (e["Poids stratégique"] > 0)]
+    fig = go.Figure()
+    for col, color in (("Allocation", "#00d4ff"), ("Sélection", "#00ff88"), ("Interaction", "#ffd700")):
+        fig.add_bar(name=col, y=e.index, x=e[col] * 100, orientation="h", marker_color=color,
+                    hovertemplate="%{y} · " + col + " %{x:+.2f} pt<extra></extra>")
+    fig.update_layout(barmode="relative", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(color="#94a3b8", family="Share Tech Mono"), height=60 + 26 * len(e),
+                      margin=dict(l=8, r=8, t=10, b=8), legend=dict(orientation="h", y=1.08),
+                      xaxis=dict(title="Contribution à l'écart (points de %)", gridcolor="rgba(255,255,255,.05)"),
+                      yaxis=dict(autorange="reversed"))
+    st.plotly_chart(fig, use_container_width=True, key="attr_fig")
+    show = e.copy()
+    st.dataframe(show.style.format({c: "{:+.2%}" for c in ("Allocation", "Sélection", "Interaction", "Total")}
+                                   | {c: "{:.1%}" for c in ("Poids moyen portefeuille", "Poids stratégique")}),
+                 use_container_width=True)
+    st.caption(
+        f"Du {res['periode'][0]} au {res['periode'][1]} ({res['jours']} séances). Référence : allocation stratégique "
+        f"{prof} représentée par les ETF du desk (rééquilibrage quotidien). Méthode Brinson-Fachler par classe "
+        "d'actifs, effets quotidiens reliés par le lissage de Carino : la somme des effets est égale à l'écart de "
+        f"performance ({res['ecart_explique']:+.2%}). Allocation = surpondérer les classes qui battent la référence ; "
+        "sélection = choisir dans une classe des lignes qui battent son ETF ; le cash non investi est compté en "
+        "Liquidités avec un rendement nul ; « Options et négociation » regroupe le résultat des options et l'écart "
+        "entre prix d'exécution et cours de clôture.")
 
 
 def render():
@@ -654,6 +712,7 @@ def render():
 
     _comparison_panel(state, live)
     _performance_panel(all_ports)
+    _attribution_panel(all_ports)
 
     ports_with_pos = [item for item in all_ports if item["port"].get("holdings")]
     if not ports_with_pos:

@@ -107,6 +107,36 @@ EMOJIS_TEAM = ["🦅", "🐂", "🎯", "🌊", "🔥", "🦁", "🐉", "⚡", "�
 EMOJIS_PORT = ["📈", "🛡️", "🚀", "💰", "🎲", "🌐", "💡", "🔮", "⚖️", "🏆"]
 
 
+def _data_quality_tab():
+    """Contrôle continu des données (v5.4) : dernier contrôle du traitement planifié + contrôle immédiat."""
+    from utils import data_quality as DQ
+    from utils import advisor as A
+    st.markdown("Le traitement planifié vérifie chaque jour ouvré les cours (source indisponible, cotation "
+                "ancienne, cours figé, saut suspect, valeur nulle, trous) et la veille d'actualité. Un problème "
+                "important déclenche une alerte « Données ».")
+    rep = DQ.last()
+    if st.button("🩺 Contrôler maintenant", key="dq_run"):
+        with st.spinner("Contrôle des données…"):
+            px, missing = A.load_prices()
+            news, news_sim = A.load_news()
+            rep = DQ.run_checks(px, missing, news, news_sim, A.ALL_TICKERS)
+            DQ.save(rep)
+    if not rep:
+        st.info("Aucun contrôle enregistré pour l'instant.")
+        return
+    col = {"OK": "#00ff88", "OK (remarques)": "#00d4ff", "À SURVEILLER": "#ffd700", "PROBLÈME": "#ff3b6b"}.get(rep["statut"], "#94a3b8")
+    st.markdown(f'<div style="border-left:4px solid {col};padding:8px 12px;background:rgba(0,0,0,.25);border-radius:4px;'
+                f'font-family:Share Tech Mono;">Dernier contrôle : {rep["date"]} · <b style="color:{col}">{rep["statut"]}</b>'
+                f' · {rep["n_problemes"]} remarque(s) sur {rep["n_series"]} séries</div>', unsafe_allow_html=True)
+    if rep["problemes"]:
+        df = pd.DataFrame(rep["problemes"]).rename(columns={"serie": "Série", "probleme": "Problème",
+                                                           "gravite": "Gravité", "detail": "Détail"})
+        order = {"critique": 0, "important": 1, "info": 2}
+        st.dataframe(df.sort_values("Gravité", key=lambda s_: s_.map(order)), use_container_width=True, hide_index=True)
+    else:
+        st.success("Aucune anomalie détectée.")
+
+
 def render():
     st.markdown(
         '<h1 style="font-family:Rajdhani,sans-serif;font-size:2rem;letter-spacing:.12em;'
@@ -128,10 +158,11 @@ def render():
             "```toml\n[admin]\npassword = \"VotreMotDePasseAdmin\"\n```"
         )
 
-    (tab_users, tab_cmp, tab_teams, tab_game, tab_assets,
+    (tab_users, tab_cmp, tab_dq, tab_teams, tab_game, tab_assets,
      tab_logs, tab_export, tab_danger) = st.tabs([
         "🔐 UTILISATEURS",
         "🛡️ CONFORMITÉ",
+        "🩺 QUALITÉ DES DONNÉES",
         "👥 ÉQUIPES & PORTEFEUILLES",
         "🎮 PARAMÈTRES JEU",
         "📋 ACTIFS",
@@ -144,6 +175,8 @@ def render():
         _users_tab()
     with tab_cmp:
         _compliance_tab()
+    with tab_dq:
+        _data_quality_tab()
     with tab_teams:
         _teams_tab()
     with tab_game:
@@ -743,7 +776,9 @@ def _export_tab():
                     })
         if rows:
             csv_buf = io.StringIO()
-            writer  = csv.DictWriter(csv_buf, fieldnames=rows[0].keys())
+            # les transactions n'ont pas toutes les mêmes champs (options, couvertures, source…)
+            fields = list(dict.fromkeys(k for r in rows for k in r))
+            writer  = csv.DictWriter(csv_buf, fieldnames=fields, restval="")
             writer.writeheader()
             writer.writerows(rows)
             st.download_button(

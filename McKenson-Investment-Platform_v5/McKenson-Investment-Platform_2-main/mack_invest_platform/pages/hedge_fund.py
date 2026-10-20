@@ -367,7 +367,7 @@ def render_advice_panel(holdings: dict, profile: str = "Équilibré", key: str =
                 st.bar_chart(stx)
         with c2:
             cls_now = lines.groupby("Classe")["Poids"].sum().reindex(A.CLASSES).fillna(0)
-            _bar_h(A.SENSITIVITY.T.dot(cls_now).rename(lambda k: A.FACTORS[k][0]),
+            _bar_h(A.sensitivity().T.dot(cls_now).rename(lambda k: A.FACTORS[k][0]),
                    "Sensibilité du portefeuille aux facteurs")
         st.markdown("##### Déclencheurs de révision")
         for x in R["triggers"]:
@@ -743,6 +743,7 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
         port["committee"] = summary_for_storage(committee_rev)
     live = get_multi_prices(tuple(sorted(set(weights.index) | set(port.get("holdings", {})))))
     orders = plan_orders(port, weights, live, pct, mode)
+    n_before = len(port.get("trades", []) or [])
     errs = execute_orders(port, orders, tag="Hedge Fund Agent") if not orders.empty else []
 
     # Couvertures recalculées sur le portefeuille réellement obtenu
@@ -759,6 +760,12 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
     persist()
     msg = A.append_journal(entry | dict(decision="validée et exécutée", couvertures_executees=done,
                                         ordres=len(orders), refus=errs + hedge_errs))
+    try:  # journal des écarts recommandation / exécution (v5.4)
+        from utils.execution_log import record_execution
+        record_execution(port, "Hedge Fund Agent", orders, n_before, errs + hedge_errs,
+                         target_weights=weights, hedges_done=done)
+    except Exception:
+        pass
     st.success(f"✅ {'Portefeuille créé' if is_new else 'Portefeuille modifié'} : {entry['portefeuille']} — "
                f"{len(orders) - len(errs)} ordre(s) spot"
                + (f", couvertures : {', '.join(done)}" if done else ", aucune couverture") + ".")
@@ -770,6 +777,55 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
         st.info("Le nouveau portefeuille est sélectionné dans la barre du haut dès le prochain affichage "
                 "(cliquez sur n'importe quel onglet) ; ses positions et couvertures sont visibles dans le "
                 "Trading Desk et le Dashboard.")
+
+
+def _gap_journal(j: list):
+    """Écarts entre recommandation et exécution, puis dérive depuis l'exécution (v5.4)."""
+    from utils import execution_log as EL
+    ex = EL.executions(j)
+    st.markdown("##### 🔍 Écarts entre recommandation et exécution")
+    if not ex:
+        st.caption("Aucune exécution de plan enregistrée pour l'instant : chaque plan exécuté depuis le Hedge Fund "
+                   "Agent, l'optimisation du comité ou Auto-Portefeuille apparaîtra ici.")
+        return
+    summ = pd.DataFrame([dict(Date=e.get("date"), Portefeuille=e.get("portefeuille"), Source=e.get("source"),
+                              Recommandé=e.get("montant_recommande", 0.0), Exécuté=e.get("montant_execute", 0.0),
+                              **{"Taux d'exécution": e.get("taux_execution", 1.0), "Bloqués": e.get("n_bloques", 0)})
+                         for e in ex]).iloc[::-1]
+    st.dataframe(summ.style.format({"Recommandé": "${:,.0f}", "Exécuté": "${:,.0f}", "Taux d'exécution": "{:.0%}"}),
+                 use_container_width=True, hide_index=True)
+    pick = st.selectbox("Détail d'une exécution", range(len(ex)), index=len(ex) - 1, key="hf_gap_pick",
+                        format_func=lambda i: f"{ex[i].get('date')} · {ex[i].get('portefeuille')} · {ex[i].get('source')}")
+    e = ex[pick]
+    lines = pd.DataFrame(e.get("lignes") or [])
+    if not lines.empty:
+        show = pd.DataFrame({"Ticker": lines["ticker"], "Sens": lines["action"].map({"BUY": "Achat", "SELL": "Vente"}),
+                             "Qté recommandée": lines["qty_reco"], "Qté exécutée": lines["qty_exec"],
+                             "Montant recommandé": lines["montant_reco"], "Montant exécuté": lines["montant_exec"],
+                             "Écart": lines["ecart_montant"], "Statut": lines["statut"], "Raison": lines["raison"]})
+        st.dataframe(show.style.format({"Qté recommandée": "{:,.4f}", "Qté exécutée": "{:,.4f}",
+                                        "Montant recommandé": "${:,.0f}", "Montant exécuté": "${:,.0f}",
+                                        "Écart": "${:+,.0f}"}), use_container_width=True, hide_index=True)
+    if e.get("couvertures"):
+        st.caption("Couvertures exécutées : " + ", ".join(map(str, e["couvertures"])))
+    # Suivi : dérive de la composition depuis l'exécution
+    from utils.data import get_or_init_state, get_multi_prices
+    state = get_or_init_state()
+    port = next((p for t in state.get("teams", {}).values() for pid, p in t.get("portfolios", {}).items()
+                 if pid == e.get("portefeuille_id") or p.get("id") == e.get("portefeuille_id")), None)
+    if port is None:
+        st.caption("Portefeuille introuvable (supprimé ou appartenant à un autre compte) : suivi impossible.")
+        return
+    live = get_multi_prices(tuple(sorted(set(port.get("holdings", {})) | set(e.get("cible") or {}))))
+    df, drift = EL.follow_up(e, port, live)
+    if df.empty:
+        return
+    c1, c2 = st.columns([1, 3])
+    c1.metric("Dérive depuis l'exécution", f"{drift:.1%}", help="Part du portefeuille à déplacer pour revenir à la "
+              "composition visée lors de l'exécution (marchés, ordres manuels, ordres bloqués).")
+    with c2:
+        st.dataframe(df.head(12).style.format("{:+.1%}", subset=["Écart"]).format("{:.1%}", subset=["Cible", "Actuel"]),
+                     use_container_width=True)
 
 
 def render():
@@ -811,8 +867,13 @@ def render():
         st.error(f"🔴 {len(crit)} alerte(s) critique(s) : " + " · ".join(a["titre"] for a in crit[:3])
                  + " — détails dans l'onglet Alertes.")
 
-    t1, t5, t2, t3, t4 = st.tabs(["🛰️ BRIEFING", f"🔔 ALERTES ({n_hot})", "🎯 ALLOCATION DU DESK",
-                                  "🩺 CONSEILS PORTEFEUILLE", "📒 JOURNAL"])
+    t1, t5, t2, t3, t4, t6 = st.tabs(["🛰️ BRIEFING", f"🔔 ALERTES ({n_hot})", "🎯 ALLOCATION DU DESK",
+                                      "🩺 CONSEILS PORTEFEUILLE", "📒 JOURNAL", "🧪 CALIBRATION & BACKTEST"])
+
+    # ── Calibration des hypothèses sur l'historique (v5.4) ───────────────────
+    with t6:
+        from components import calibration_ui
+        calibration_ui.render()
 
     # ── Alertes ───────────────────────────────────────────────────────────────
     with t5:
@@ -854,6 +915,11 @@ def render():
         st.markdown(f'<div class="hf-card"><div class="hf-title">Régime : {html.escape(macro.regime)}</div>'
                     f'<div class="hf-sub">{html.escape(macro.regime_text)}</div></div>',
                     unsafe_allow_html=True)
+        try:
+            from utils.calibration import sensitivity_source
+            st.caption(f"Matrice de sensibilité utilisée : {sensitivity_source()} — détails dans l'onglet Calibration.")
+        except Exception:
+            pass
         c1, c2 = st.columns([1.1, 1])
         with c1:
             _bar_h(pd.Series({A.FACTORS[k][0]: v for k, v in macro.factors.items()}),
@@ -885,19 +951,51 @@ def render():
             _render_factor_history(hist, PM.factor_moves(hist))
 
         st.markdown("##### Veille actualités (7 derniers jours)")
+        st.caption("Intensité = place du sujet dans l'actualité · tonalité = bonne ou mauvaise nouvelle pour les "
+                   "marchés (lexique financier français / anglais, de −1 à +1). ● vert : titre positif · "
+                   "● rouge : négatif · ● gris : neutre.")
         themes = sorted(news.items(), key=lambda kv: -kv[1]["intensity"])
         cols = st.columns(3)
+
+        def _dot(v):
+            c_ = GREEN if v is not None and v > 0.05 else (RED if v is not None and v < -0.05 else "#64748b")
+            return f'<span style="color:{c_}">●</span> '
+
         for i, (k, th) in enumerate(themes):
             with cols[i % 3]:
                 lvl = th["intensity"]
                 color = RED if lvl >= 60 else ("#f59e0b" if lvl >= 35 else GREEN)
+                sen = th.get("sentiment") or {}
+                tone = ""
+                if sen.get("n"):
+                    tc = GREEN if sen["score"] >= 0.15 else (RED if sen["score"] <= -0.15 else "#94a3b8")
+                    tone = (f'<div class="hf-sub">Tonalité : <b style="color:{tc}">{html.escape(sen["libelle"])} '
+                            f'({sen["score"]:+.2f})</b> · {sen["positifs"]} positif(s), {sen["negatifs"]} négatif(s) '
+                            f'sur {sen["n"]} titres</div>')
                 heads = "".join(
-                    f'<div><a href="{html.escape(h["link"])}" target="_blank">{html.escape(h["title"][:110])}</a>'
-                    f' <small>{h["date"]:%d/%m}</small></div>' for h in th["headlines"][:3])
+                    f'<div>{_dot(h.get("tonalite"))}<a href="{html.escape(h["link"])}" target="_blank">'
+                    f'{html.escape(h["title"][:110])}</a> <small>{h["date"]:%d/%m}</small></div>'
+                    for h in th["headlines"][:3])
                 st.markdown(
                     f'<div class="hf-card hf-news"><div class="hf-title" style="font-size:.9rem">'
                     f'{html.escape(th["label"])} <span style="color:{color}">{lvl:.0f}/100</span></div>'
-                    f'{heads or "<small>Aucun titre récent</small>"}</div>', unsafe_allow_html=True)
+                    f'{tone}{heads or "<small>Aucun titre récent</small>"}</div>', unsafe_allow_html=True)
+        try:
+            from utils.sentiment import class_sentiment
+            cs = class_sentiment(news)
+        except Exception:
+            cs = {}
+        if cs:
+            st.markdown("##### Tonalité de l'actualité par classe d'actifs")
+            rows = [{"Classe d'actifs": c, "Tonalité": v["score"], "Lecture": v["libelle"], "Titres": v["n"],
+                     "Exemple négatif": (v["exemples_neg"] or [""])[0][:90],
+                     "Exemple positif": (v["exemples_pos"] or [""])[0][:90]}
+                    for c, v in sorted(cs.items(), key=lambda kv: kv[1]["score"])]
+            st.dataframe(pd.DataFrame(rows).style.format({"Tonalité": "{:+.2f}"}), use_container_width=True,
+                         hide_index=True)
+            st.caption("Chaque titre est rattaché aux classes qu'il mentionne (mots-clés) ; tonalité moyenne pondérée "
+                       "par la fraîcheur. Indicateur d'ambiance, à croiser avec les facteurs : un lexique ne "
+                       "comprend ni l'ironie ni le contexte long.")
 
     # ── 2. Allocation du desk ─────────────────────────────────────────────────
     with t2:
@@ -994,6 +1092,7 @@ def render():
             alloc = pd.Series(j[pick].get("allocation", {}), dtype=float)
             if not alloc.empty:
                 _pct_table(alloc.rename("Poids").to_frame(), ["Poids"])
+            _gap_journal(j)
             st.download_button("⬇️ Exporter le journal (JSON)",
                                json.dumps(j, ensure_ascii=False, indent=1, default=str).encode("utf-8"),
                                "journal_hedge_fund.json", "application/json", key="hf_jdl")

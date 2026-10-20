@@ -97,7 +97,7 @@ def _alert(rule, key, severity, category, direction, title, why, impact, watch, 
 
 
 def _impact_from_factor(k: str, sign: float) -> str:
-    s = (A.SENSITIVITY[k] * sign).sort_values()
+    s = (A.sensitivity()[k] * sign).sort_values()
     up = ", ".join(s.index[-3:][::-1])
     down = ", ".join(s.index[:3])
     return f"Classes plutôt favorisées : {up}. Classes plutôt pénalisées : {down}."
@@ -106,8 +106,18 @@ def _impact_from_factor(k: str, sign: float) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 # Règles
 # ══════════════════════════════════════════════════════════════════════════════
+def _thresholds() -> dict:
+    """Seuils d'expert, ou calibrés sur l'historique si un administrateur les a appliqués (v5.4)."""
+    try:
+        from utils.calibration import active_alert_thresholds
+        return active_alert_thresholds()
+    except Exception:
+        return dict(z_info=2.0, z_important=2.5, z_critique=3.5, taux_info=0.20, taux_important=0.30)
+
+
 def market_alerts(px: pd.DataFrame, missing: list) -> list:
     out = []
+    th = _thresholds()
     for t, name in WATCH.items():
         if t not in px.columns or t in missing:
             continue
@@ -121,9 +131,10 @@ def market_alerts(px: pd.DataFrame, missing: list) -> list:
         r1, r5 = float(r.iloc[-1]), float(r.tail(5).sum())
         z1, z5 = r1 / sd, r5 / (sd * np.sqrt(5))
         for horizon, ret, z in (("séance", r1, z1), ("semaine", r5, z5)):
-            if abs(z) < 2.0:
+            if abs(z) < th["z_info"]:
                 continue
-            sev = "critique" if abs(z) >= 3.5 else ("important" if abs(z) >= 2.5 else "info")
+            sev = ("critique" if abs(z) >= th["z_critique"] else
+                   ("important" if abs(z) >= th["z_important"] else "info"))
             up = ret > 0
             pct = np.expm1(ret)
             out.append(_alert(
@@ -190,10 +201,11 @@ def rates_alerts(px: pd.DataFrame, missing: list) -> list:
         t = px["^TNX"].dropna()
         if len(t) > 6:
             d = float(t.iloc[-1] - t.iloc[-6])
-            if abs(d) >= 0.20:
+            th = _thresholds()
+            if abs(d) >= th["taux_info"]:
                 up = d > 0
                 out.append(_alert(
-                    "taux10", "5j", "important" if abs(d) >= 0.30 else "info", "Taux", "hausse" if up else "baisse",
+                    "taux10", "5j", "important" if abs(d) >= th["taux_important"] else "info", "Taux", "hausse" if up else "baisse",
                     f"Taux 10 ans US {'en hausse' if up else 'en baisse'} de {abs(d) * 100:.0f} pb en une semaine "
                     f"({t.iloc[-1]:.2f} %)",
                     ("Une hausse rapide des taux longs renchérit le financement et fait baisser la valeur des "
@@ -264,12 +276,15 @@ def news_alerts(news: dict, news_sim: bool, prev: dict | None = None) -> list:
         else:
             continue
         heads = [h["title"] for h in th["headlines"][:3]]
+        sen = th.get("sentiment") or {}
+        tone = (f" Tonalité des titres : {sen['libelle']} ({sen['score']:+.2f}, {sen.get('negatifs', 0)} titre(s) "
+                f"négatif(s) sur {sen['n']})." if sen.get("n") else "")
         cat = "Géopolitique" if th["factor"] == "geopolitique" else (
             "Finance" if th["factor"] in ("credit", "monetaire") else "Économie")
         out.append(_alert(
             "actualite", k, sev, cat, "hausse",
             f"{th['label']} : intensité {lvl:.0f}/100" + (f" (+{jump:.0f} depuis le dernier relevé)" if jump >= 10 else ""),
-            THEME_READ.get(k, "") + (" Titres récents : « " + " » ; « ".join(heads) + " »." if heads else ""),
+            THEME_READ.get(k, "") + tone + (" Titres récents : « " + " » ; « ".join(heads) + " »." if heads else ""),
             _impact_from_factor(th["factor"], -1 if k == "desescalade" else 1),
             "Distinguer le bruit médiatique d'un vrai changement : surveiller la réaction du pétrole, de l'or, "
             "du dollar et du VIX.", round(lvl, 1)))

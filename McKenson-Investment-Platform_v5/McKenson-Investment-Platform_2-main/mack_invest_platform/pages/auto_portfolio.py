@@ -441,8 +441,16 @@ def _tab_apply(ctx):
     if st.button("🚀 EXÉCUTER LES ORDRES", disabled=not confirm or vetoed, use_container_width=True, key="auto_apply_go"):
         if rev:
             port["committee"] = CM.summary_for_storage(rev)
+        n_before = len(port.get("trades", []) or [])
         errs = execute_orders(port, orders.drop(columns=["conformité"], errors="ignore"))
         persist()
+        try:  # journal des écarts recommandation / exécution (v5.4)
+            from utils.execution_log import record_execution
+            _nav = cash0 + sum(vals.values())
+            record_execution(port, "Auto-Portefeuille", orders, n_before, errs,
+                             target_weights={t: v / _nav for t, v in proj.items()} if _nav else None)
+        except Exception:
+            pass
         if errs:
             st.warning("Ordres partiellement exécutés : " + "; ".join(errs))
         else:

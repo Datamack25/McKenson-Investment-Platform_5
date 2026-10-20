@@ -173,10 +173,26 @@ def propose_hedges(exposures: dict[str, dict], factors: dict, vix: float | None,
     for b, e in sorted(exposures.items(), key=lambda kv: -kv[1]["montant"]):
         if nav <= 0 or e["montant"] / nav < min_weight:
             continue
-        meta = BUCKETS[b]
+        meta = dict(BUCKETS[b])
         risk, why = bucket_risk(b, factors)
         recommended = risk >= 0.25
         ratio = float(np.clip(0.30 + 0.20 * risk, 0.25, 0.75)) if recommended else 0.25
+        calib = None
+        try:  # paramètres calibrés sur l'historique, si un administrateur les a appliqués (v5.4)
+            from utils.calibration import active_hedge, hedge_ratio_from_calibration
+            calib = active_hedge(b)
+        except Exception:
+            calib = None
+        if calib:
+            if calib.get("vol_calibre"):
+                meta["vol"] = float(calib["vol_calibre"])
+            if calib.get("choc_calibre"):
+                meta["choc"] = float(calib["choc_calibre"])
+            if calib.get("predictif"):
+                ratio, recommended = hedge_ratio_from_calibration(calib, risk)
+                p_ = 1 / (1 + math.exp(-(calib["logit_a"] + calib["logit_b"] * risk)))
+                why = why + [f"historique : probabilité d'une baisse de plus de {abs(calib['seuil_perte']):.0%} "
+                             f"en 3 mois ≈ {p_:.0%} à ce niveau de risque (moyenne {calib['frequence']:.0%})"]
         sigma = float(np.clip(vix / 100 * meta["vol"], 0.08, 0.90))
         strategy = "Put spread" if vix >= 22 or sigma >= 0.35 else "Put de protection"
         und = meta["hedge"]
@@ -211,7 +227,7 @@ def propose_hedges(exposures: dict[str, dict], factors: dict, vix: float | None,
             valeur_contrat=contract_value, choc=meta["choc"], perte_sans=loss,
             gain_couverture=payoff, perte_avec=loss + payoff - cost,
             recommandee=recommended, risque=risk, pourquoi=why, protege_contre=meta["risque"],
-            echeance=T_DAYS, delta=delta,
+            echeance=T_DAYS, delta=delta, calibree=bool(calib),
         ))
     return out
 
