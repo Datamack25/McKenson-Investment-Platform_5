@@ -11,6 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from components.ui import section_title
+import html as _h
+from utils.sectors import sector_of, option_sector
 from utils.data import get_or_init_state, get_multi_prices, get_price_change, persist
 
 _TAPE_SYMBOLS = [
@@ -755,7 +757,7 @@ def render():
         if not positions:
             st.info("Aucune position spot.")
             return
-        hdr = ["TICKER","PORTEFEUILLE","QTÉ","PX ENTRÉE","PX ACTUEL","VAR 1J","VALEUR","P&L $","P&L %"]
+        hdr = ["TICKER","SECTEUR","PORTEFEUILLE","QTÉ","PX ENTRÉE","PX ACTUEL","VAR 1J","VALEUR","P&L $","P&L %"]
         th  = "".join(f'<th style="font-family:Rajdhani;font-size:.62rem;color:{accent};letter-spacing:.08em;'
                       f'text-transform:uppercase;padding:7px 10px;background:{accent}0d;'
                       f'border-bottom:1px solid {accent}33;">{c}</th>' for c in hdr)
@@ -767,6 +769,7 @@ def render():
             tbody += (
                 f'<tr style="border-bottom:1px solid rgba(255,255,255,.03);">'
                 f'<td style="padding:7px 10px;color:{accent};font-weight:bold;font-family:Rajdhani;font-size:.85rem;">{p["ticker"]}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#94a3b8;">{_h.escape(sector_of(p["ticker"]))}</td>'
                 f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.68rem;color:#475569;">{p["port"]}</td>'
                 f'<td style="padding:7px 10px;font-family:Share Tech Mono;">{p["qty"]:,.4f}</td>'
                 f'<td style="padding:7px 10px;color:#7a93b0;font-family:Share Tech Mono;">{_fmt(p["avg"])}</td>'
@@ -780,7 +783,7 @@ def render():
         # Total row
         tc_=_pc(t_pnl); tpct=t_pnl/t_cost*100 if t_cost else 0
         tbody += (f'<tr style="background:{accent}0a;border-top:1px solid {accent}44;">'
-                  f'<td colspan="6" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL — {len(positions)} position(s)</td>'
+                  f'<td colspan="7" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL — {len(positions)} position(s)</td>'
                   f'<td style="padding:7px 10px;font-weight:bold;">{_fmt(t_mkt)}</td>'
                   f'<td style="padding:7px 10px;color:{tc_};font-weight:bold;">{_sg(t_pnl)}${abs(t_pnl):,.2f}</td>'
                   f'<td style="padding:7px 10px;color:{tc_};">{_ar(tpct)} {_sg(tpct)}{abs(tpct):.2f}%</td></tr>')
@@ -793,7 +796,7 @@ def render():
         if not options:
             st.info("Aucune position option ou dérivé.")
             return
-        hdr = ["SOUS-JAC.","PORT.","C/P","STRIKE","QTÉ×MULT","PRIME ENTRÉE","PRIME MTM","VALEUR MTM","P&L","DELTA Σ"]
+        hdr = ["SOUS-JAC.","SECTEUR / INSTRUMENT","PORT.","C/P","SENS","STRIKE","QTÉ×MULT","PRIME ENTRÉE","PRIME MTM","VALEUR MTM","P&L","DELTA Σ"]
         th  = "".join(f'<th style="font-family:Rajdhani;font-size:.62rem;color:#7c3aed;letter-spacing:.08em;'
                       f'text-transform:uppercase;padding:7px 10px;background:rgba(124,58,237,.06);'
                       f'border-bottom:1px solid rgba(124,58,237,.2);">{c}</th>' for c in hdr)
@@ -805,8 +808,10 @@ def render():
             tbody += (
                 f'<tr style="border-bottom:1px solid rgba(255,255,255,.03);">'
                 f'<td style="padding:7px 10px;color:#7c3aed;font-weight:bold;">{o["ticker"]}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#c4b5fd;">{_h.escape(option_sector(o))}</td>'
                 f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.68rem;color:#475569;">{o["port"]}</td>'
                 f'<td style="padding:7px 10px;color:{cp_c};font-weight:bold;">{"C" if o["type"]=="call" else "P"}</td>'
+                f'<td style="padding:7px 10px;color:#94a3b8;">{"Achat" if o.get("action","BUY")=="BUY" else "Vente"}</td>'
                 f'<td style="padding:7px 10px;">{o["strike"]:,.4f}</td>'
                 f'<td style="padding:7px 10px;">{n}×{mult}</td>'
                 f'<td style="padding:7px 10px;color:#7a93b0;">{o["premium"]:,.4f}</td>'
@@ -818,7 +823,7 @@ def render():
             )
         tc_=_pc(t_pnl)
         tbody += (f'<tr style="background:rgba(124,58,237,.05);border-top:1px solid rgba(124,58,237,.2);">'
-                  f'<td colspan="7" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL OPTIONS — {len(options)} position(s)</td>'
+                  f'<td colspan="9" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">TOTAL OPTIONS — {len(options)} position(s)</td>'
                   f'<td style="padding:7px 10px;font-weight:bold;">${t_val:,.2f}</td>'
                   f'<td style="padding:7px 10px;color:{tc_};font-weight:bold;">{_sg(t_pnl)}${abs(t_pnl):,.2f}</td>'
                   f'<td></td></tr>')
@@ -826,6 +831,65 @@ def render():
                     f'<table style="width:100%;border-collapse:collapse;font-family:Share Tech Mono;font-size:.75rem;color:#e2e8f0;">'
                     f'<thead><tr>{th}</tr></thead><tbody>{tbody}</tbody></table></div>',
                     unsafe_allow_html=True)
+
+    def _all_table(positions, options):
+        """Tableau général : positions au comptant ET dérivés, avec leur secteur."""
+        if not positions and not options:
+            st.info("Aucune position.")
+            return
+        acc, vio = "#00d4ff", "#7c3aed"
+        hdr = ["INSTRUMENT","SECTEUR","PORTEFEUILLE","QTÉ","PX ENTRÉE","PX ACTUEL","VAR 1J","VALEUR","P&L $","P&L %"]
+        th = "".join(f'<th style="font-family:Rajdhani;font-size:.62rem;color:{acc};letter-spacing:.08em;'
+                     f'text-transform:uppercase;padding:7px 10px;background:{acc}0d;border-bottom:1px solid {acc}33;">{c}</th>'
+                     for c in hdr)
+        rows, t_val, t_pnl, t_cost = [], 0.0, 0.0, 0.0
+        for p in positions:
+            rows.append(dict(mkt=p["mkt"], html=(
+                f'<td style="padding:7px 10px;color:{acc};font-weight:bold;font-family:Rajdhani;font-size:.85rem;">{p["ticker"]}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#94a3b8;">{_h.escape(sector_of(p["ticker"]))}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.68rem;color:#475569;">{p["port"]}</td>'
+                f'<td style="padding:7px 10px;">{p["qty"]:,.4f}</td>'
+                f'<td style="padding:7px 10px;color:#7a93b0;">{_fmt(p["avg"])}</td>'
+                f'<td style="padding:7px 10px;">{_fmt(p["curr"])}</td>'
+                f'<td style="padding:7px 10px;color:{_pc(p["pct_d"])};">{_ar(p["pct_d"])} {_sg(p["pct_d"])}{abs(p["pct_d"]):.2f}%</td>'
+                f'<td style="padding:7px 10px;">{_fmt(p["mkt"])}</td>'
+                f'<td style="padding:7px 10px;color:{_pc(p["pnl"])};font-weight:bold;">{_sg(p["pnl"])}${abs(p["pnl"]):,.2f}</td>'
+                f'<td style="padding:7px 10px;color:{_pc(p["pnl"])};">{_ar(p["pnl"])} {_sg(p["pnl"])}{abs(p["pnl"] / p["cost"] * 100 if p["cost"] else 0):.2f}%</td>')))
+            t_val += p["mkt"]; t_pnl += p["pnl"]; t_cost += p["cost"]
+        for o in options:
+            mult = o.get("contract_mult", 100); n = o["n_contracts"]
+            long_ = o.get("action", "BUY") == "BUY"
+            val = o["mtm_value"] if long_ else -o["mtm_value"]          # option vendue = engagement
+            cost = o["premium"] * n * mult
+            pct = o["opt_pnl"] / cost * 100 if cost else 0
+            label = f'{o["ticker"]} {o["type"].upper()} {o["strike"]:,.2f}'
+            rows.append(dict(mkt=abs(val), html=(
+                f'<td style="padding:7px 10px;color:{vio};font-weight:bold;font-family:Rajdhani;font-size:.82rem;">{_h.escape(label)}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.72rem;color:#c4b5fd;">Dérivé — {_h.escape(option_sector(o))}</td>'
+                f'<td style="padding:7px 10px;font-family:Rajdhani;font-size:.68rem;color:#475569;">{o["port"]}</td>'
+                f'<td style="padding:7px 10px;">{"+" if long_ else "−"}{n}×{mult}</td>'
+                f'<td style="padding:7px 10px;color:#7a93b0;">{o["premium"]:,.4f}</td>'
+                f'<td style="padding:7px 10px;">{o["mtm_premium"]:,.4f}</td>'
+                f'<td style="padding:7px 10px;color:#475569;">—</td>'
+                f'<td style="padding:7px 10px;">{"" if val >= 0 else "−"}{_fmt(abs(val))}</td>'
+                f'<td style="padding:7px 10px;color:{_pc(o["opt_pnl"])};font-weight:bold;">{_sg(o["opt_pnl"])}${abs(o["opt_pnl"]):,.2f}</td>'
+                f'<td style="padding:7px 10px;color:{_pc(o["opt_pnl"])};">{_ar(pct)} {_sg(pct)}{abs(pct):.2f}%</td>')))
+            t_val += val; t_pnl += o["opt_pnl"]; t_cost += cost if long_ else 0.0
+        rows.sort(key=lambda r: r["mkt"], reverse=True)
+        tbody = "".join(f'<tr style="border-bottom:1px solid rgba(255,255,255,.03);">{r["html"]}</tr>' for r in rows)
+        tpct = t_pnl / t_cost * 100 if t_cost else 0
+        tbody += (f'<tr style="background:{acc}0a;border-top:1px solid {acc}44;">'
+                  f'<td colspan="7" style="padding:7px 10px;font-family:Rajdhani;font-size:.7rem;color:#475569;letter-spacing:.1em;">'
+                  f'TOTAL — {len(positions)} position(s) au comptant · {len(options)} dérivé(s)</td>'
+                  f'<td style="padding:7px 10px;font-weight:bold;">{_fmt(t_val)}</td>'
+                  f'<td style="padding:7px 10px;color:{_pc(t_pnl)};font-weight:bold;">{_sg(t_pnl)}${abs(t_pnl):,.2f}</td>'
+                  f'<td style="padding:7px 10px;color:{_pc(t_pnl)};">{_ar(tpct)} {_sg(tpct)}{abs(tpct):.2f}%</td></tr>')
+        st.markdown(f'<div style="overflow-x:auto;border:1px solid {acc}22;border-radius:8px;">'
+                    f'<table style="width:100%;border-collapse:collapse;font-family:Share Tech Mono;font-size:.75rem;color:#e2e8f0;">'
+                    f'<thead><tr>{th}</tr></thead><tbody>{tbody}</tbody></table></div>', unsafe_allow_html=True)
+        if options:
+            st.caption("Dérivés : quantité = contrats × multiplicateur (+ achat, − vente) ; prix = prime par titre ; "
+                       "valeur = valeur de marché Black-Scholes (négative pour une option vendue : c'est un engagement).")
 
     # ── ONGLET 1 : TOTAL ──────────────────────────────────────────────────────
     with tab_total:
@@ -850,13 +914,8 @@ def render():
             for w in _check_constraints(item["port"], live):
                 st.warning(w)
 
-        section_title("TOUTES LES POSITIONS SPOT", "📈")
-        _spot_table(all_spot_positions)
-
-        if all_opt_positions:
-            st.markdown("<br>", unsafe_allow_html=True)
-            section_title("TOUTES LES OPTIONS & DÉRIVÉS", "⚙️")
-            _opt_table(all_opt_positions)
+        section_title("TOUTES LES POSITIONS — AU COMPTANT ET DÉRIVÉS", "📊")
+        _all_table(all_spot_positions, all_opt_positions)
 
     # ── ONGLET 2 : SPOT SEULEMENT ─────────────────────────────────────────────
     with tab_spot:
