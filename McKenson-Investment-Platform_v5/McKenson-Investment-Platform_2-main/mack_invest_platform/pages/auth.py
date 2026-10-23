@@ -211,6 +211,61 @@ def _render_forced_change():
             st.rerun()
 
 
+# ── Accès administrateur depuis l'écran de connexion (v5.5) ────────────────────
+ADMIN_MAX_TRIES = 5
+
+
+def _admin_access_tab():
+    """Connexion avec son compte ET ouverture directe du panneau d'administration.
+    Un compte de rôle « admin » suffit ; sinon le mot de passe administrateur (secrets Streamlit
+    [admin] password) est exigé en plus. La session reste aussi une session utilisateur normale."""
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="auth-hint">Accédez directement à l\'<b style="color:#ff3b6b;">Administration</b> : '
+        'identifiants de votre compte, plus le mot de passe administrateur si votre compte n\'a pas le rôle '
+        'administrateur. Vous gardez aussi l\'accès utilisateur (portefeuilles, pages).</div>',
+        unsafe_allow_html=True)
+    tries = st.session_state.get("_adm_tries", 0)
+    if tries >= ADMIN_MAX_TRIES:
+        _box("err", "🔒 Trop d'essais : accès administrateur bloqué pour cette session. Rechargez la page plus tard.")
+        return
+    u = st.text_input("Nom d'utilisateur", key="adm_user", placeholder="ex: jean.dupont")
+    p = st.text_input("Mot de passe du compte", type="password", key="adm_pass", placeholder="••••••••")
+    code = st.text_input("Mot de passe administrateur", type="password", key="adm_code",
+                         placeholder="Inutile si votre compte a le rôle administrateur")
+    if st.button("🛡️ Se connecter en administrateur", key="btn_admin_access", use_container_width=True, type="primary"):
+        if not u or not p:
+            _box("err", "❌ Renseignez le nom d'utilisateur et le mot de passe du compte.")
+            return
+        user = login_user(u, p)
+        if not user:
+            st.session_state["_adm_tries"] = tries + 1
+            lock = login_lock_minutes(u)
+            _box("err", f"🔒 Compte verrouillé pendant {lock} min." if lock else "❌ Identifiants incorrects.")
+            return
+        if user.get("must_change_password"):
+            _box("warn", "🔐 Mot de passe temporaire : connectez-vous d'abord par l'onglet « Connexion » pour le "
+                         "changer, puis revenez ici.")
+            return
+        is_admin = user.get("role") == "admin"
+        if not is_admin:
+            try:
+                from pages.admin import _admin_password
+                is_admin = bool(code) and code == _admin_password()
+            except Exception:
+                is_admin = False
+        if not is_admin:
+            st.session_state["_adm_tries"] = tries + 1
+            _box("err", "❌ Accès administrateur refusé : ce compte n'a pas le rôle administrateur et le mot de passe "
+                        "administrateur est absent ou incorrect. Utilisez l'onglet « Connexion » pour un accès "
+                        "utilisateur.")
+            return
+        st.session_state.pop("_adm_tries", None)
+        st.session_state["admin_authenticated"] = True
+        st.session_state["page"] = "admin"
+        _finalize_login(user)
+
+
 # ── Page principale ────────────────────────────────────────────────────────────
 def render_auth() -> bool:
     """
@@ -251,9 +306,13 @@ def render_auth() -> bool:
 
     _logo()
 
-    tab_login, tab_register, tab_forgot = st.tabs(
-        ["🔐 Connexion", "📝 Créer un compte", "🔑 Identifiants oubliés"]
+    tab_login, tab_register, tab_forgot, tab_admin = st.tabs(
+        ["🔐 Connexion", "📝 Créer un compte", "🔑 Identifiants oubliés", "🛡️ Administrateur"]
     )
+
+    # ── ACCÈS ADMINISTRATEUR (v5.5) ──────────────────────────────────────────
+    with tab_admin:
+        _admin_access_tab()
 
     # ── LOGIN ────────────────────────────────────────────────────────────────
     with tab_login:
