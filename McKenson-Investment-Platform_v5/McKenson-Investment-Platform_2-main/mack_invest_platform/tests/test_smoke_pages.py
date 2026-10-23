@@ -3,7 +3,7 @@ import importlib
 
 import pytest
 
-PAGES = ["dashboard", "trading", "technical", "ai_markets", "auto_portfolio", "hedge_fund", "optimizer",
+PAGES = ["dashboard", "trading", "technical", "ai_markets", "auto_portfolio", "hedge_fund", "portfolio_upload", "optimizer",
          "reports", "leaderboard", "education", "events", "admin"]
 
 
