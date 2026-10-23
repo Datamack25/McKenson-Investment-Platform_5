@@ -351,7 +351,7 @@ def render_auth() -> bool:
     with tab_register:
         st.markdown("<br>", unsafe_allow_html=True)
         username_r  = st.text_input("Nom d'utilisateur *", key="reg_user",  placeholder="ex: jean.dupont")
-        email_r     = st.text_input("Email *",             key="reg_email", placeholder="jean.dupont@eslsca.fr")
+        email_r     = st.text_input("Email *",             key="reg_email", placeholder="jean.dupont@exemple.fr")
         password_r  = st.text_input("Mot de passe *",      type="password", key="reg_pass",  placeholder="Min. 6 caractères")
         password_r2 = st.text_input("Confirmer le mot de passe *", type="password", key="reg_pass2", placeholder="••••••••")
         st.markdown(
@@ -479,7 +479,7 @@ def _forgot_with_email():
     if step == 1:
         _box("info", "Saisis l'adresse e-mail de ton compte : tu recevras ton nom "
                      f"d'utilisateur et un code à 6 chiffres valable {RESET_CODE_TTL_MIN} min.")
-        email = st.text_input("Adresse e-mail", key="fg_email", placeholder="jean.dupont@eslsca.fr")
+        email = st.text_input("Adresse e-mail", key="fg_email", placeholder="jean.dupont@exemple.fr")
         if st.button("📨 Envoyer le code", key="btn_fg_send", use_container_width=True, type="primary"):
             if "@" not in (email or ""):
                 _box("err", "❌ Email invalide.")
