@@ -567,6 +567,42 @@ def _performance_panel(all_ports: list):
         "Les indicateurs annualisés nécessitent au moins 5 jours de cotation.")
 
 
+def _leaders_tables():
+    """Secteurs et régions qui performent le mieux : perf. 3 et 12 mois + lecture du contexte (régime du comité)."""
+    from datetime import datetime, timedelta
+    from components.committee_ui import get_context
+    from utils import performance as PF
+    from utils import upload_advisor as U
+    try:
+        ctx = get_context()
+        hist = PF.price_history(U.board_tickers(), (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d"))
+        sec, reg = U.sector_board(hist, ctx["macro"]), U.region_board(hist, ctx["macro"])
+    except Exception as ex:
+        st.caption(f"Classements secteurs / régions indisponibles ({type(ex).__name__}).")
+        return
+    st.markdown("**🏭 Secteurs qui performent le mieux**")
+    st.dataframe(sec[["Perf. 3 mois", "Perf. 12 mois", "Lecture du contexte", "Score"]].head(8)
+                 .style.format({"Perf. 3 mois": "{:+.1%}", "Perf. 12 mois": "{:+.1%}", "Score": "{:.0f}"}, na_rep="—"),
+                 use_container_width=True, height=260)
+    st.markdown("**🌍 Régions qui performent le mieux**")
+    st.dataframe(reg[["Zone", "Perf. 3 mois", "Lecture du contexte", "Score"]].head(8)
+                 .style.format({"Perf. 3 mois": "{:+.1%}", "Score": "{:.0f}"}, na_rep="—"),
+                 use_container_width=True, height=260)
+    st.caption(f"Score 0–100 : 40 % perf. 3 mois, 20 % perf. 12 mois, 40 % contexte (régime « {ctx['macro'].regime} »)."
+               + ("" if hist is not None and not hist.empty else " Cours indisponibles : contexte seul."))
+    with st.expander("🗺️ Carte des régions", expanded=False):
+        import plotly.graph_objects as go
+        r = reg.reset_index()
+        fig = go.Figure(go.Choropleth(locations=r["ISO3"], z=r["Score"], text=r["Région"], zmin=0, zmax=100,
+                                      colorscale=[[0, "#ff3b6b"], [0.5, "#ffd700"], [1, "#00ff88"]],
+                                      marker_line_color="#0b1220", showscale=False,
+                                      hovertemplate="%{text} · score %{z:.0f}/100<extra></extra>"))
+        fig.update_geos(bgcolor="rgba(0,0,0,0)", showframe=False, showcoastlines=False, landcolor="#1e293b",
+                        showcountries=True, countrycolor="#334155", projection_type="natural earth")
+        fig.update_layout(height=260, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True, key="dash_leaders_map")
+
+
 def _attribution_panel(all_ports: list):
     """Attribution de performance et écart de suivi par rapport à l'allocation stratégique (v5.4)."""
     import plotly.graph_objects as go
@@ -574,7 +610,10 @@ def _attribution_panel(all_ports: list):
     from utils import advisor as A
     cands = [it for it in all_ports if any(str(t.get("action", "")).upper() in ("BUY", "SELL")
                                            for t in it["port"].get("trades", []) or []) or it["port"].get("options")]
-    if not cands:
+    if not cands:  # sans transaction : les classements restent visibles sur le Dashboard
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_title("SECTEURS ET RÉGIONS QUI PERFORMENT LE MIEUX", "🌍")
+        _leaders_tables()
         return
     st.markdown("<br>", unsafe_allow_html=True)
     section_title("ATTRIBUTION DE PERFORMANCE — VS ALLOCATION STRATÉGIQUE", "🧮")
@@ -590,6 +629,7 @@ def _attribution_panel(all_ports: list):
         res = PF.attribution(port, profile=prof)
     if not res.get("ok"):
         st.info(res.get("detail", "Attribution indisponible."))
+        _leaders_tables()
         return
     k = st.columns(5)
     k[0].metric("Portefeuille", f"{res['perf_portefeuille']:+.2%}")
@@ -608,11 +648,16 @@ def _attribution_panel(all_ports: list):
                       margin=dict(l=8, r=8, t=10, b=8), legend=dict(orientation="h", y=1.08),
                       xaxis=dict(title="Contribution à l'écart (points de %)", gridcolor="rgba(255,255,255,.05)"),
                       yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig, use_container_width=True, key="attr_fig")
-    show = e.copy()
-    st.dataframe(show.style.format({c: "{:+.2%}" for c in ("Allocation", "Sélection", "Interaction", "Total")}
-                                   | {c: "{:.1%}" for c in ("Poids moyen portefeuille", "Poids stratégique")}),
-                 use_container_width=True)
+    # À côté de l'attribution : secteurs et régions qui performent le mieux (contexte inclus, v5.5)
+    g_left, g_right = st.columns([1.55, 1])
+    with g_left:
+        st.plotly_chart(fig, use_container_width=True, key="attr_fig")
+        show = e.copy()
+        st.dataframe(show.style.format({c: "{:+.2%}" for c in ("Allocation", "Sélection", "Interaction", "Total")}
+                                       | {c: "{:.1%}" for c in ("Poids moyen portefeuille", "Poids stratégique")}),
+                     use_container_width=True)
+    with g_right:
+        _leaders_tables()
     st.caption(
         f"Du {res['periode'][0]} au {res['periode'][1]} ({res['jours']} séances). Référence : allocation stratégique "
         f"{prof} représentée par les ETF du desk (rééquilibrage quotidien). Méthode Brinson-Fachler par classe "
