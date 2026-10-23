@@ -370,6 +370,7 @@ pages = {
     "🧠 IA Marchés":          "ai_markets",
     "🤖 Auto-Portefeuille":   "auto_portfolio",
     "🦅 Hedge Fund Agent":    "hedge_fund",
+    "📥 Conseil portefeuille": "portfolio_upload",
     "📈 Optimizer":           "optimizer",
     "📄 Rapports":            "reports",
     "🏆 Classement":          "leaderboard",
@@ -402,6 +403,8 @@ try:
         from pages import auto_portfolio; auto_portfolio.render()
     elif page == "hedge_fund":
         from pages import hedge_fund; hedge_fund.render()
+    elif page == "portfolio_upload":
+        from pages import portfolio_upload; portfolio_upload.render()
     elif page == "optimizer":
         from pages import optimizer; optimizer.render()
     elif page == "reports":
