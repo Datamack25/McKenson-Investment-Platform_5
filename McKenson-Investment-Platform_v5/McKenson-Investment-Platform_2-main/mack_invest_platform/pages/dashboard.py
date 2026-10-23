@@ -568,8 +568,10 @@ def _performance_panel(all_ports: list):
 
 
 def _leaders_tables():
-    """Secteurs et régions qui performent le mieux : perf. 3 et 12 mois + lecture du contexte (régime du comité)."""
+    """Dashboard (2 éléments seulement) : secteurs qui performent le mieux + carte des régions.
+    Le tableau détaillé des régions est dans l'onglet 📥 Conseil portefeuille."""
     from datetime import datetime, timedelta
+    import plotly.graph_objects as go
     from components.committee_ui import get_context
     from utils import performance as PF
     from utils import upload_advisor as U
@@ -581,26 +583,21 @@ def _leaders_tables():
         st.caption(f"Classements secteurs / régions indisponibles ({type(ex).__name__}).")
         return
     st.markdown("**🏭 Secteurs qui performent le mieux**")
-    st.dataframe(sec[["Perf. 3 mois", "Perf. 12 mois", "Lecture du contexte", "Score"]].head(8)
+    st.dataframe(sec[["Perf. 3 mois", "Perf. 12 mois", "Lecture du contexte", "Score"]].head(6)
                  .style.format({"Perf. 3 mois": "{:+.1%}", "Perf. 12 mois": "{:+.1%}", "Score": "{:.0f}"}, na_rep="—"),
-                 use_container_width=True, height=260)
-    st.markdown("**🌍 Régions qui performent le mieux**")
-    st.dataframe(reg[["Zone", "Perf. 3 mois", "Lecture du contexte", "Score"]].head(8)
-                 .style.format({"Perf. 3 mois": "{:+.1%}", "Score": "{:.0f}"}, na_rep="—"),
-                 use_container_width=True, height=260)
-    st.caption(f"Score 0–100 : 40 % perf. 3 mois, 20 % perf. 12 mois, 40 % contexte (régime « {ctx['macro'].regime} »)."
-               + ("" if hist is not None and not hist.empty else " Cours indisponibles : contexte seul."))
-    with st.expander("🗺️ Carte des régions", expanded=False):
-        import plotly.graph_objects as go
-        r = reg.reset_index()
-        fig = go.Figure(go.Choropleth(locations=r["ISO3"], z=r["Score"], text=r["Région"], zmin=0, zmax=100,
-                                      colorscale=[[0, "#ff3b6b"], [0.5, "#ffd700"], [1, "#00ff88"]],
-                                      marker_line_color="#0b1220", showscale=False,
-                                      hovertemplate="%{text} · score %{z:.0f}/100<extra></extra>"))
-        fig.update_geos(bgcolor="rgba(0,0,0,0)", showframe=False, showcoastlines=False, landcolor="#1e293b",
-                        showcountries=True, countrycolor="#334155", projection_type="natural earth")
-        fig.update_layout(height=260, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True, key="dash_leaders_map")
+                 use_container_width=True, height=250)
+    st.markdown("**🗺️ Carte des régions qui performent le mieux**")
+    r = reg.reset_index()
+    fig = go.Figure(go.Choropleth(locations=r["ISO3"], z=r["Score"], text=r["Région"], zmin=0, zmax=100,
+                                  colorscale=[[0, "#ff3b6b"], [0.5, "#ffd700"], [1, "#00ff88"]],
+                                  marker_line_color="#0b1220", showscale=False,
+                                  hovertemplate="%{text} · score %{z:.0f}/100<extra></extra>"))
+    fig.update_geos(bgcolor="rgba(0,0,0,0)", showframe=False, showcoastlines=False, landcolor="#1e293b",
+                    showcountries=True, countrycolor="#334155", projection_type="natural earth")
+    fig.update_layout(height=230, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True, key="dash_leaders_map")
+    st.caption(f"Score 0–100 (vert = meilleur) : performance 3 et 12 mois + contexte (régime « {ctx['macro'].regime} »). "
+               "Détail des régions : onglet 📥 Conseil portefeuille.")
 
 
 def _attribution_panel(all_ports: list):
