@@ -1,13 +1,24 @@
-📈 McKenson Investment Platform - MIP — version 5.4.0
+📈 McKenson Investment Platform - MIP — version 5.5.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.4.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.5.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.5 — Conseil sur un portefeuille importé + accès administrateur
+
+**📥 Conseil portefeuille** (nouvel onglet) : l'utilisateur importe son portefeuille en **CSV ou Excel** (format affiché avant l'import, modèles téléchargeables : colonnes `ticker` + `quantite` ou `montant`, facultatif `prix_achat`, `nom`, `devise`, ligne `CASH` pour les liquidités). Le comité MAM l'analyse selon le **profil investisseur** et la **politique d'investissement** retenue (profil, IPS d'un portefeuille existant ou saisie dédiée) et le contexte de marché :
+- avis des six membres, réallocation et optimisation (ordres proposés, jamais exécutés) ;
+- scénarios de marché (stress tests du desk + scénario personnalisé) et stress test inversé ;
+- à côté du tableau importé : **secteurs** et **régions** qui performent le mieux (perf. 3 et 12 mois + lecture du contexte), avec **carte du monde** ;
+- téléchargement en **Excel** (7 feuilles, graphiques natifs), **CSV** ou **image PNG**.
+Après chaque analyse et dans chaque fichier : « ce n'est pas un conseil financier ; Mackenson CINEUS n'est pas responsable et ne s'engage pas ».
+
+**🛡️ Onglet Administrateur sur l'écran de connexion** : connexion avec son compte et ouverture directe du panneau d'administration (compte de rôle administrateur, ou mot de passe `[admin] password` des secrets). La session garde aussi l'accès utilisateur.
 
 Nouveautés v5.4 — Calibration sur l'historique (lot 1 de la feuille de route)
 
@@ -149,8 +160,8 @@ No naked shorts — les ventes de calls non couverts sont bloquées par la confo
 Full greeks: Δ, Γ, θ, ν, ρ
 Quick Start
 # Clone
-git clone https://github.com/YOUR_USERNAME/eslsca-stock-game.git
-cd eslsca-stock-game
+git clone https://github.com/Datamack25/McKenson-Investment-Platform_5.git
+cd McKenson-Investment-Platform_5/McKenson-Investment-Platform_v5/McKenson-Investment-Platform_2-main/mack_invest_platform
 
 # Install
 pip install -r requirements.txt
@@ -235,7 +246,7 @@ Go to share.streamlit.io
 New app → select repo → app.py
 Deploy 🚀
 Structure
-eslsca_platform/
+mack_invest_platform/      # McKenson Investment Platform (MIP)
 ├── app.py                  # Entry point
 ├── jobs/weekly_report.py   # job planifié : alertes quotidiennes + rapport PNG du lundi
 ├── .github/workflows/weekly_report.yml   # planification GitHub Actions (gratuit)
@@ -254,6 +265,7 @@ eslsca_platform/
 │   ├── ai_markets.py       # 🧠 IA Marchés (régime, macro, géopolitique, signaux ML, conseils)
 │   ├── auto_portfolio.py   # 🤖 Auto-Portefeuille (construction, backtest, risques, exports, exécution)
 │   ├── hedge_fund.py       # 🦅 Hedge Fund Agent (briefing, allocation du desk, conseils, journal)
+│   ├── portfolio_upload.py # 📥 Conseil portefeuille : fichier importé analysé par le comité (v5.5)
 │   ├── reports.py          # 📄 Rapports PDF / PNG des portefeuilles
 │   ├── optimizer.py        # 📈 Optimiseur multi-méthodes
 │   ├── leaderboard.py
@@ -282,6 +294,7 @@ eslsca_platform/
 │   ├── calibration.py      # v5.4 calibration des hypothèses sur 10 ans d'historique
 │   ├── execution_log.py    # v5.4 journal des écarts recommandation / exécution
 │   ├── data_quality.py     # v5.4 contrôle continu des données
+│   ├── upload_advisor.py   # v5.5 portefeuille importé : lecture, analyse, exports
 │   ├── sentiment.py        # v5.4 tonalité des titres et pertinence par classe
 │   ├── committee.py        # v5.3 comité virtuel, IPS, avis, validation, optimisation
 │   ├── committee_report.py # v5.3 rapport du comité (PNG + PDF + e-mail)
@@ -304,4 +317,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.4.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.5.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
