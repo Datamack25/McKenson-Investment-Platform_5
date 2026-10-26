@@ -756,7 +756,8 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
         for h in H.propose_hedges(H.exposures_from_values(vals), macro.factors, vix, nav):
             if h["cle"] in accepted:
                 e = H.execute_hedge(port, h)
-                (hedge_errs.append(e) if e else done.append(f'{h["panier"]} ({h["contrats"]} × {h["sous_jacent"]})'))
+                (hedge_errs.append(e) if e else done.append(h.get("ajustement")
+                                                             or f'{h["panier"]} ({h["contrats"]} × {h["sous_jacent"]})'))
     persist()
     msg = A.append_journal(entry | dict(decision="validée et exécutée", couvertures_executees=done,
                                         ordres=len(orders), refus=errs + hedge_errs))
