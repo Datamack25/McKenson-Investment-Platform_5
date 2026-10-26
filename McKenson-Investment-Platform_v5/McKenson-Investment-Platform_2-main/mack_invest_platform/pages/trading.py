@@ -467,7 +467,8 @@ def _options_desk(port, state, team_id, port_id, assets_df):
         if not decision.allowed:
             st.error("⛔ Ordre bloqué par la conformité : " + decision.short_reason())
             return
-        port.setdefault("options", []).append({
+        from utils.options import book_option   # une ligne par instrument (v5.5)
+        _book = book_option(port, {
             "date":          datetime.now().strftime("%Y-%m-%d %H:%M"),
             "ticker":        ticker,
             "type":          opt_type,
@@ -490,7 +491,7 @@ def _options_desk(port, state, team_id, port_id, assets_df):
             "qty":    n_contracts, "price": round(premium,6), "total": round(total_premium,2),
         })
         persist()
-        st.success(f"✅ Option enregistrée : {n_contracts}× {opt_type.upper()} K=${K:.2f} sur {ticker}")
+        st.success(f"✅ Option enregistrée : {n_contracts}× {opt_type.upper()} K=${K:.2f} sur {ticker} ({_book})")
         st.rerun()
 
 
@@ -702,7 +703,8 @@ def _strategy_desk(port, assets_df):
             buy = l["qty"] > 0
             k = abs(int(l["qty"]))
             tot = l["premium"] * k * mult
-            port.setdefault("options", []).append({
+            from utils.options import book_option   # une ligne par instrument (v5.5)
+            book_option(port, {
                 "date": now, "ticker": ticker, "type": l["type"], "action": "BUY" if buy else "SELL",
                 "strike": round(l["K"], 4), "maturity_days": T_days, "sigma": round(sigma * 100, 2),
                 "n_contracts": k, "contract_mult": mult, "premium": round(l["premium"], 6),
