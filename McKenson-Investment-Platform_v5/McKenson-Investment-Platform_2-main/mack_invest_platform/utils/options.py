@@ -185,3 +185,94 @@ STRATEGY_META: dict[str, dict] = {
     "Short Straddle":   {"cat": "Neutral",    "color": "#ff3b6b", "use": "Vendre la volatilité — risque illimité"},
     "Risk Reversal":    {"cat": "Bullish",    "color": "#ff8c00", "use": "Exposition haussière — financement par put vendu"},
 }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CARNET DE POSITIONS D'OPTIONS (v5.5) — une ligne par instrument
+# ══════════════════════════════════════════════════════════════════════════════
+# Un même instrument (sous-jacent, call/put, prix d'exercice, échéance) n'occupe qu'UNE ligne :
+# un achat supplémentaire augmente la quantité (prime moyenne pondérée), une vente réduit la
+# quantité ou clôture la ligne, au lieu d'ajouter une nouvelle ligne en double.
+from datetime import datetime as _dt, timedelta as _td
+
+EXPIRY_TOLERANCE_DAYS = 7      # échéances continues : deux échéances à ±7 jours = même contrat
+
+
+def _entry_date(o: dict) -> _dt:
+    try:
+        return _dt.strptime(str(o.get("date", ""))[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        try:
+            return _dt.fromisoformat(str(o.get("date", ""))[:19])
+        except ValueError:
+            return _dt.now()
+
+
+def option_expiry(o: dict) -> _dt:
+    return _entry_date(o) + _td(days=float(o.get("maturity_days", 30)))
+
+
+def remaining_days(o: dict, now: _dt | None = None) -> float:
+    return (option_expiry(o) - (now or _dt.now())).total_seconds() / 86400
+
+
+def same_instrument(a: dict, b: dict) -> bool:
+    return (str(a.get("ticker")).upper() == str(b.get("ticker")).upper()
+            and str(a.get("type")).lower() == str(b.get("type")).lower()
+            and abs(float(a.get("strike", 0)) - float(b.get("strike", 0))) < 1e-6
+            and abs((option_expiry(a) - option_expiry(b)).days) <= EXPIRY_TOLERANCE_DAYS)
+
+
+def book_option(port: dict, leg: dict) -> str:
+    """Enregistre une jambe d'option dans le carnet du portefeuille SANS dupliquer l'instrument.
+    `leg` a le format d'une ligne d'options (date, ticker, type, action, strike, maturity_days, sigma,
+    n_contracts, contract_mult, premium…). Le cash est géré par l'appelant.
+    Renvoie : « nouvelle ligne » | « renforcement » | « réduction » | « clôture » | « retournement »."""
+    opts = port.setdefault("options", [])
+    n_new = int(abs(leg.get("n_contracts", 0)))
+    if n_new <= 0:
+        return "aucun changement"
+    leg = {**leg, "n_contracts": n_new}
+    match = next((o for o in opts if same_instrument(o, leg) and int(o.get("n_contracts", 0)) > 0), None)
+    if match is None:
+        opts.append(leg)
+        return "nouvelle ligne"
+    mult = float(match.get("contract_mult", 100))
+    n_old = int(match.get("n_contracts", 0))
+    if str(match.get("action", "BUY")).upper() == str(leg.get("action", "BUY")).upper():
+        n = n_old + n_new
+        match["premium"] = round((float(match["premium"]) * n_old + float(leg["premium"]) * n_new) / n, 6)
+        match["n_contracts"] = n
+        match["total_premium"] = round(match["premium"] * n * mult, 2)
+        match["sigma"] = leg.get("sigma", match.get("sigma"))
+        match["derniere_modification"] = leg.get("date")
+        return "renforcement"
+    if n_new < n_old:                                   # vente partielle d'une position détenue (ou rachat partiel)
+        match["n_contracts"] = n_old - n_new
+        match["total_premium"] = round(float(match["premium"]) * match["n_contracts"] * mult, 2)
+        match["derniere_modification"] = leg.get("date")
+        return "réduction"
+    opts.remove(match)
+    if n_new == n_old:
+        return "clôture"
+    opts.append({**leg, "n_contracts": n_new - n_old,
+                 "total_premium": round(float(leg["premium"]) * (n_new - n_old) * mult, 2)})
+    return "retournement"
+
+
+def consolidate_options(port: dict) -> int:
+    """Regroupe les lignes déjà en double (même instrument, même sens). Renvoie le nombre de lignes fusionnées."""
+    opts = port.get("options", []) or []
+    merged, before = [], len(opts)
+    for o in opts:
+        tgt = next((m for m in merged if same_instrument(m, o)
+                    and str(m.get("action")).upper() == str(o.get("action")).upper()), None)
+        if tgt is None:
+            merged.append(dict(o))
+            continue
+        n1, n2 = int(tgt["n_contracts"]), int(o["n_contracts"])
+        tgt["premium"] = round((float(tgt["premium"]) * n1 + float(o["premium"]) * n2) / (n1 + n2), 6)
+        tgt["n_contracts"] = n1 + n2
+        tgt["total_premium"] = round(tgt["premium"] * tgt["n_contracts"] * float(tgt.get("contract_mult", 100)), 2)
+    port["options"] = merged
+    return before - len(merged)
