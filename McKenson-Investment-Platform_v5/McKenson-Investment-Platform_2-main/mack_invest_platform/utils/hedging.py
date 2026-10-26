@@ -235,36 +235,127 @@ def propose_hedges(exposures: dict[str, dict], factors: dict, vix: float | None,
 # ══════════════════════════════════════════════════════════════════════════════
 #  EXÉCUTION (avec contrôles de conformité)
 # ══════════════════════════════════════════════════════════════════════════════
+def _existing_hedge(port: dict, h: dict) -> list[dict]:
+    """Lignes d'options vivantes de la couverture du même panier (même sous-jacent)."""
+    from utils.options import remaining_days
+    lab = f"Couverture {h['panier']}"
+    return [o for o in port.get("options", []) or []
+            if str(o.get("strategy", "")).startswith(lab) and o.get("ticker") == h["sous_jacent"]
+            and int(o.get("n_contracts", 0)) > 0 and remaining_days(o) > 0]
+
+
 def execute_hedge(port: dict, h: dict, tag: str = "Hedge Fund Agent") -> str:
-    """Achète la couverture dans le portefeuille. Renvoie '' si exécutée, sinon la raison."""
-    from utils.compliance import pre_trade_options, log_decision
-    if h["contrats"] <= 0:
-        return (f"{h['panier']} : exposition trop faible pour un contrat "
-                f"(1 contrat {h['sous_jacent']} ≈ ${h['valeur_contrat']:,.0f})")
-    dec, a = pre_trade_options(port, h["sous_jacent"], h["legs"], spot=h["spot"], mult=MULT,
-                               T_days=h["echeance"], r=RATE, sigma=h["sigma"],
-                               hedge_exposure=h["exposition"])
-    log_decision(dec, port, h["sous_jacent"], f"COUVERTURE {h['strategie']}", h["contrats"],
-                 a["net_premium"], executed=dec.allowed, note=f"{tag} — {h['panier']}")
-    if not dec.allowed:
-        return f"{h['panier']} bloquée — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    sid = f"H{datetime.now():%H%M%S}{h['cle'][:3].upper()}"
-    for l in h["legs"]:
-        buy = l["qty"] > 0
-        k = abs(int(l["qty"]))
-        tot = l["premium"] * k * MULT
-        port.setdefault("options", []).append({
-            "date": now, "ticker": h["sous_jacent"], "type": "put", "action": "BUY" if buy else "SELL",
-            "strike": round(l["K"], 4), "maturity_days": h["echeance"], "sigma": round(h["sigma"] * 100, 2),
-            "n_contracts": k, "contract_mult": MULT, "premium": round(l["premium"], 6),
-            "total_premium": round(tot, 2), "spot_at_entry": round(h["spot"], 4), "currency": "USD",
-            "strategy": f"Couverture {h['panier']} ({h['strategie']})", "strategy_id": sid,
-        })
-        port["cash"] = port.get("cash", 0.0) + (-tot if buy else tot)
+    """Met la couverture du panier au niveau recommandé. Renvoie '' si c'est fait, sinon la raison.
+
+    v5.5 : la recommandation donne le NOMBRE TOTAL de contrats visé pour le panier. Si une couverture
+    existe déjà, on AJUSTE la ligne existante (achat du complément, ou revente de l'excédent en commençant
+    par les lignes les plus récentes) au lieu d'ajouter une ligne en double. Le détail est placé dans
+    h["ajustement"]."""
+    from utils.compliance import Decision, log_decision, pre_trade_options
+    from utils.options import book_option, consolidate_options, remaining_days
+    consolidate_options(port)                          # fusionne d'éventuelles lignes identiques déjà en double
+    existing = _existing_hedge(port, h)
+    target = int(h["contrats"])
+    now_dt = datetime.now()
+    now = now_dt.strftime("%Y-%m-%d %H:%M")
+    sid = f"H{now_dt:%H%M%S}{h['cle'][:3].upper()}"
+    label = f"Couverture {h['panier']} ({h['strategie']})"
+
+    if not existing:                                   # ── première couverture du panier ──
+        if target <= 0:
+            return (f"{h['panier']} : exposition trop faible pour un contrat "
+                    f"(1 contrat {h['sous_jacent']} ≈ ${h['valeur_contrat']:,.0f})")
+        dec, a = pre_trade_options(port, h["sous_jacent"], h["legs"], spot=h["spot"], mult=MULT,
+                                   T_days=h["echeance"], r=RATE, sigma=h["sigma"],
+                                   hedge_exposure=h["exposition"])
+        log_decision(dec, port, h["sous_jacent"], f"COUVERTURE {h['strategie']}", target,
+                     a["net_premium"], executed=dec.allowed, note=f"{tag} — {h['panier']}")
+        if not dec.allowed:
+            return f"{h['panier']} bloquée — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks)
+        for l in h["legs"]:
+            buy = l["qty"] > 0
+            k = abs(int(l["qty"]))
+            tot = l["premium"] * k * MULT
+            book_option(port, {
+                "date": now, "ticker": h["sous_jacent"], "type": "put", "action": "BUY" if buy else "SELL",
+                "strike": round(l["K"], 4), "maturity_days": h["echeance"], "sigma": round(h["sigma"] * 100, 2),
+                "n_contracts": k, "contract_mult": MULT, "premium": round(l["premium"], 6),
+                "total_premium": round(tot, 2), "spot_at_entry": round(h["spot"], 4), "currency": "USD",
+                "strategy": label, "strategy_id": sid})
+            port["cash"] = port.get("cash", 0.0) + (-tot if buy else tot)
+        port.setdefault("trades", []).append({
+            "date": now, "ticker": f"{h['sous_jacent']} {h['strategie']}", "action": "COUVERTURE OPTIONS",
+            "qty": target, "price": round(a["net_premium"] / max(target * MULT, 1), 6),
+            "total": round(a["net_premium"], 2), "source": tag, "conformite": "contrôlé"})
+        h["ajustement"] = f"{h['panier']} : nouvelle couverture de {target} contrat(s) {h['sous_jacent']}"
+        return ""
+
+    # ── une couverture existe : on ajuste les lignes existantes ──────────────────
+    longs = [o for o in existing if str(o.get("action", "BUY")).upper() == "BUY"]
+    shorts = [o for o in existing if str(o.get("action", "BUY")).upper() == "SELL"]
+    n_old = sum(int(o["n_contracts"]) for o in longs)
+    diff = target - n_old
+    if diff == 0:
+        h["ajustement"] = f"{h['panier']} : couverture déjà au niveau recommandé ({n_old} contrat(s)), aucun ordre"
+        return ""
+    spot, sigma = float(h["spot"]), float(h["sigma"])
+
+    def _px(o):
+        T = max(remaining_days(o), 1.0) / 365.0
+        return float(bs_price(spot, float(o["strike"]), T, RATE, sigma, "put"))
+
+    def _leg(o, qty_abs, action):
+        p = _px(o)
+        return p, {"date": now, "ticker": o["ticker"], "type": "put", "action": action, "strike": o["strike"],
+                   "maturity_days": max(int(round(remaining_days(o))), 1), "sigma": round(sigma * 100, 2),
+                   "n_contracts": int(qty_abs), "contract_mult": MULT, "premium": round(p, 6),
+                   "total_premium": round(p * qty_abs * MULT, 2), "spot_at_entry": round(spot, 4),
+                   "currency": "USD", "strategy": o.get("strategy", label), "strategy_id": o.get("strategy_id", sid)}
+
+    cash_flow = 0.0
+    if diff > 0:                                       # ── renforcer la ligne existante (échéance la plus longue) ──
+        base = max(longs, key=remaining_days) if longs else None
+        if base is None:
+            return f"{h['panier']} : structure de couverture inattendue (aucune jambe acheteuse)"
+        plan = [(base, diff, "BUY")]
+        if shorts:                                     # put spread : la jambe vendue suit
+            plan.append((max(shorts, key=remaining_days), diff, "SELL"))
+        legs_chk = [{"type": "put", "qty": q if a_ == "BUY" else -q, "K": float(o["strike"]), "premium": _px(o)}
+                    for o, q, a_ in plan]
+        dec, a = pre_trade_options(port, h["sous_jacent"], legs_chk, spot=spot, mult=MULT,
+                                   T_days=max(int(remaining_days(base)), 1), r=RATE, sigma=sigma,
+                                   hedge_exposure=h["exposition"])
+        log_decision(dec, port, h["sous_jacent"], f"RENFORCEMENT COUVERTURE {h['strategie']}", diff,
+                     a["net_premium"], executed=dec.allowed, note=f"{tag} — {h['panier']}")
+        if not dec.allowed:
+            return f"{h['panier']} bloquée — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks)
+        for o, q, act in plan:
+            p, leg = _leg(o, q, act)
+            book_option(port, leg)
+            cash_flow += (-1 if act == "BUY" else 1) * p * q * MULT
+        verb = "renforcée"
+    else:                                              # ── réduire : revente de l'excédent, lignes récentes d'abord ──
+        def _reduce(lines, qty, close_action):
+            nonlocal cash_flow
+            for o in sorted(lines, key=lambda x: str(x.get("date", "")), reverse=True):
+                if qty <= 0:
+                    break
+                q = min(qty, int(o["n_contracts"]))
+                p, leg = _leg(o, q, close_action)
+                book_option(port, leg)
+                cash_flow += (1 if close_action == "SELL" else -1) * p * q * MULT
+                qty -= q
+        _reduce(longs, -diff, "SELL")                  # revente des puts achetés
+        if shorts:
+            _reduce(shorts, -diff, "BUY")              # rachat des puts vendus (put spread)
+        dec = Decision("option")                       # réduction de risque : pas de contrôle bloquant
+        log_decision(dec, port, h["sous_jacent"], f"RÉDUCTION COUVERTURE {h['strategie']}", -diff, cash_flow,
+                     executed=True, note=f"{tag} — {h['panier']}")
+        verb = "réduite"
+    port["cash"] = port.get("cash", 0.0) + cash_flow
     port.setdefault("trades", []).append({
-        "date": now, "ticker": f"{h['sous_jacent']} {h['strategie']}", "action": "COUVERTURE OPTIONS",
-        "qty": h["contrats"], "price": round(a["net_premium"] / max(h["contrats"] * MULT, 1), 6),
-        "total": round(a["net_premium"], 2), "source": tag, "conformite": "contrôlé",
-    })
+        "date": now, "ticker": f"{h['sous_jacent']} {h['strategie']}", "action": "AJUSTEMENT COUVERTURE",
+        "qty": diff, "price": round(abs(cash_flow) / max(abs(diff) * MULT, 1), 6),
+        "total": round(-cash_flow, 2), "source": tag, "conformite": "contrôlé"})
+    h["ajustement"] = f"{h['panier']} : couverture {verb} de {n_old} à {target} contrat(s) {h['sous_jacent']}"
     return ""
