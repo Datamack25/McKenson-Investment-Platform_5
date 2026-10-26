@@ -324,7 +324,7 @@ def _committee_optimizer():
                                       ctx2.get("vix"), cash2 + sum(vals2.values()), prices=live2):
                 if h["cle"] in accepted:
                     e = H.execute_hedge(port, h, tag="Comité MAM")
-                    (herrs.append(e) if e else done.append(h["panier"]))
+                    (herrs.append(e) if e else done.append(h.get("ajustement", h["panier"])))
         port["committee"] = CM.summary_for_storage(after)
         persist()
         try:  # journal des écarts recommandation / exécution (v5.4)
