@@ -152,6 +152,7 @@ def discipline_tab(port: dict, live: dict, total_val: float):
     st.caption("Les règles qu'un gérant s'impose pour pouvoir, plus tard, expliquer chaque décision : thèses "
                "écrites, risques documentés ligne par ligne, chaînes de valeur surveillées, dépassements encadrés, "
                "calendrier des résultats.")
+    _income_section(port)
     _themes_section(values, total_val)
     _sheets_section(port)
     _derogations_section(port, weights)
@@ -268,3 +269,34 @@ def _journal_section(port: dict):
                                                                       else "plan automatique contrôlé par le comité"),
                      "Dangers identifiés": th.get("risques", "—"), "Horizon": th.get("horizon", "—")})
     st.dataframe(pd.DataFrame(rows).style.format({"Montant": "{:,.0f}"}), use_container_width=True, hide_index=True)
+
+
+def _income_section(port: dict):
+    """v5.8 — revenus (dividendes, intérêts), frais et flux externes, avec le journal des mouvements."""
+    from components.ui import section_title
+    from utils import ledger as LG
+    from utils.costs import describe
+    from utils.income import income_summary
+    section_title("LIQUIDITÉS, REVENUS ET FRAIS", "💵")
+    inc = income_summary(port)
+    k = st.columns(5)
+    k[0].metric("Dividendes reçus", f"{inc['dividendes']:,.0f} $".replace(",", " "))
+    k[1].metric("Intérêts reçus", f"{inc['interets']:,.0f} $".replace(",", " "))
+    k[2].metric("Taux monétaire", "—" if inc["taux"] is None else f"{inc['taux']:.2%}",
+                help="Bons du Trésor américain à 13 semaines (^IRX), base exact/360.")
+    k[3].metric("Frais payés", f"{inc['frais']:,.0f} $".replace(",", " "))
+    k[4].metric("Apports − retraits", f"{inc['apports'] - inc['retraits']:,.0f} $".replace(",", " "))
+    st.caption("Les liquidités sont rémunérées chaque jour au taux monétaire du marché ; les dividendes sont versés "
+               "à la date de détachement, nets de la retenue à la source non récupérable (hypothèse : résident fiscal "
+               "français). Les apports et retraits ne modifient pas la performance (TWR, norme GIPS).")
+    mv = LG.movements(port)
+    if not mv.empty:
+        show = mv.sort_values("date", ascending=False).head(200).copy()
+        show["type"] = show["type"].map(LG.LABEL).fillna(show["type"])
+        cols = [c for c in ("date", "type", "ticker", "montant", "detail") if c in show]
+        st.dataframe(show[cols].rename(columns={"date": "Date", "type": "Mouvement", "ticker": "Ligne",
+                                                "montant": "Montant", "detail": "Détail"})
+                     .style.format({"Montant": "{:+,.2f}"}), use_container_width=True, hide_index=True, height=260)
+    with st.expander("Barème des coûts de transaction appliqués"):
+        for x in describe():
+            st.markdown(f"- {x}")

@@ -23,6 +23,8 @@ import pandas as pd
 TOLERANCE = 0.005          # écart de moins de 0,5 point : « à peu près comme le marché »
 
 STRATEGY_LABELS = [
+    ("Portefeuille proposé (ajusté", "Portefeuille proposé puis ajusté par vous"),
+    ("Portefeuille proposé", "Portefeuille proposé par le comité"),
     ("Comité MAM", "Plan du comité"),
     ("Hedge Fund Agent", "Allocation du desk (Hedge Fund Agent)"),
     ("auto-IA", "Auto-Portefeuille"),
@@ -81,12 +83,21 @@ def _line_strategy(port: dict) -> dict[str, str]:
     return {tk: max(d.items(), key=lambda kv: kv[1])[0] for tk, d in amt.items() if d}
 
 
+FEES_LABEL = "Frais de transaction"
+CASH_LABEL = "Liquidités (intérêts)"
+
+
 def line_contributions(port: dict, start: str | pd.Timestamp | None = None, end: str | pd.Timestamp | None = None,
                        det: pd.DataFrame | None = None, prices: pd.DataFrame | None = None) -> dict:
-    """Contribution de chaque ligne (et des options) à la performance sur la période.
+    """Contribution de chaque ligne à la performance pondérée dans le temps (TWR, GIPS).
 
-    contribution = (valeur finale − valeur initiale − achats nets de la période) / valeur du portefeuille
-    au début. La somme des contributions est égale à la performance du portefeuille."""
+    Chaque jour : résultat de la ligne = variation de valeur − achats nets + dividendes reçus ;
+    les frais de transaction et les intérêts des liquidités sont des lignes à part. Les contributions
+    quotidiennes (résultat / valeur de la veille, apports et retraits inclus) sont chaînées par le
+    lissage de Carino : leur somme est EXACTEMENT égale au TWR de la période, quels que soient les
+    apports ou retraits de liquidités."""
+    import math
+    from utils import ledger as LG
     from utils import performance as PF
     if det is None:
         det = PF.nav_detail(port, prices)
@@ -98,44 +109,80 @@ def line_contributions(port: dict, start: str | pd.Timestamp | None = None, end:
         det = det[det.index <= pd.Timestamp(end)]
     if len(det) < 2:
         return dict(ok=False, detail="période trop courte")
-    d0, d1 = det.index[0], det.index[-1]
-    nav0 = float(det.iloc[0].sum())
+    idx = det.index
+    d0, d1 = idx[0], idx[-1]
+    nav = det.sum(axis=1)
+    nav0 = float(nav.iloc[0])
     if nav0 <= 0:
         return dict(ok=False, detail="valeur de départ nulle")
-    flows: dict[str, float] = {}
+    ext = LG.daily_sum(port, LG.EXTERNAL, idx)
+    r = LG.twr_returns(nav, ext)
+    base = (nav.shift(1) + ext).iloc[1:]
+
+    def _day(dates: pd.Series) -> np.ndarray:
+        pos = idx.searchsorted(dates.dt.normalize())
+        return pos
+
+    # achats nets et frais par ligne et par jour
+    buys = pd.DataFrame(0.0, index=idx, columns=[c for c in det.columns if c not in ("CASH", "OPTIONS")])
+    fees = pd.Series(0.0, index=idx)
     tr = PF._spot_trades(port)
     if not tr.empty:
-        win = tr[(tr["date"].dt.normalize() > d0) & (tr["date"].dt.normalize() <= d1)]
-        for _, r in win.iterrows():
-            flows[r["ticker"]] = flows.get(r["ticker"], 0.0) + (1 if r["action"] == "BUY" else -1) * r["qty"] * r["price"]
-    opt_flow = 0.0
+        pos = _day(tr["date"])
+        for (_, t), p_ in zip(tr.iterrows(), pos):
+            if 0 < p_ < len(idx) and t["ticker"] in buys.columns:
+                buys.iloc[p_, buys.columns.get_loc(t["ticker"])] += (1 if t["action"] == "BUY" else -1) * t["qty"] * t["price"]
+                fees.iloc[p_] += t.get("frais", 0.0)
+    fees = fees - LG.daily_sum(port, ("frais",), idx)        # commissions d'options (montants négatifs)
+    divs = LG.daily_sum(port, ("dividende",), idx, by_ticker=True)
+    interest = LG.daily_sum(port, ("interet",), idx)
+    prem = pd.Series(0.0, index=idx)
     for o in PF._option_positions(port):
-        if d0 < o["date"].normalize() <= d1:
-            opt_flow += o["sign"] * o["premium"] * o["units"]
+        p_ = idx.searchsorted(o["date"].normalize())
+        if 0 < p_ < len(idx):
+            prem.iloc[p_] += o["sign"] * o["premium"] * o["units"]
+
+    pnl = {}
+    for c in buys.columns:
+        dv = divs[c] if c in getattr(divs, "columns", []) else 0.0
+        pnl[c] = (det[c].diff() - buys[c] + dv).iloc[1:]
+    if "OPTIONS" in det:
+        pnl["OPTIONS"] = (det["OPTIONS"].diff() - prem).iloc[1:]
+    pnl[FEES_LABEL] = -fees.iloc[1:]
+    pnl[CASH_LABEL] = interest.iloc[1:]
+
+    R = float((1 + r).prod() - 1)
+    lnR = math.log1p(R) / R if abs(R) > 1e-12 else 1.0
+    k = pd.Series(np.where(r.abs() > 1e-12, np.log1p(r) / r.where(r.abs() > 1e-12, 1.0), 1.0), index=r.index) / lnR
     strat = _line_strategy(port)
     try:
         from utils.advisor import classify_ticker
     except Exception:
         classify_ticker = lambda t: None  # noqa: E731
     rows = []
-    for c in det.columns:
-        if c == "CASH":
+    for c, s_ in pnl.items():
+        res = float(s_.sum())
+        contrib = float((s_ / base.where(base > 0)).fillna(0.0).mul(k).sum())
+        if abs(res) < 1e-6 and abs(contrib) < 1e-9:
             continue
-        v0, v1 = float(det[c].iloc[0]), float(det[c].iloc[-1])
-        flow = opt_flow if c == "OPTIONS" else flows.get(c, 0.0)
-        pnl = v1 - v0 - flow
-        if abs(pnl) < 1e-6 and v0 == 0 and v1 == 0:
-            continue
-        rows.append(dict(ligne=c if c != "OPTIONS" else "Options",
-                         classe=("Options" if c == "OPTIONS" else (classify_ticker(c) or "Actions US")),
-                         strategie=(OPTIONS_LABEL if c == "OPTIONS" else strat.get(c, MANUAL_LABEL)),
-                         resultat=pnl, contribution=pnl / nav0, valeur_fin=v1))
+        if c == "OPTIONS":
+            lab, cls, st_ = "Options", "Options", OPTIONS_LABEL
+        elif c == FEES_LABEL:
+            lab, cls, st_ = FEES_LABEL, "Frais", FEES_LABEL
+        elif c == CASH_LABEL:
+            lab, cls, st_ = CASH_LABEL, "Liquidités", "Liquidités rémunérées"
+        else:
+            lab, cls, st_ = c, (classify_ticker(c) or "Actions US"), strat.get(c, MANUAL_LABEL)
+        rows.append(dict(ligne=lab, classe=cls, strategie=st_, resultat=res, contribution=contrib,
+                         valeur_fin=float(det[c].iloc[-1]) if c in det else 0.0))
     df = pd.DataFrame(rows)
-    nav = det.sum(axis=1)
-    cash_w = (det["CASH"] / nav).clip(lower=0) if "CASH" in det else pd.Series(0.0, index=det.index)
+    cash_w = (det["CASH"] / nav).clip(lower=0) if "CASH" in det else pd.Series(0.0, index=idx)
     return dict(ok=True, lignes=df.sort_values("contribution") if not df.empty else df,
-                debut=d0, fin=d1, nav0=nav0, nav1=float(nav.iloc[-1]),
-                perf=float(nav.iloc[-1] / nav0 - 1), cash_moyen=float(cash_w.mean()), nav=nav)
+                debut=d0, fin=d1, nav0=nav0, nav1=float(nav.iloc[-1]), perf=R, cash_moyen=float(cash_w.mean()),
+                nav=LG.twr_index(nav, ext), valeurs=nav, apports=float(ext.iloc[1:].sum()),
+                interets=float(interest.iloc[1:].sum()), frais=float(fees.iloc[1:].sum()),
+                dividendes=float(divs.values.sum()) if hasattr(divs, "values") and len(getattr(divs, "columns", []))
+                else 0.0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -169,7 +216,12 @@ def _compose(perf: float, perf_b: float | None, bench_name: str, lignes: pd.Data
         if lignes is not None and not lignes.empty else pd.DataFrame()
     top_neg = lignes[lignes["contribution"] < 0].sort_values("contribution").head(3) \
         if lignes is not None and not lignes.empty else pd.DataFrame()
-    cash_drag = -cash_moyen * perf_b if (perf_b is not None and np.isfinite(perf_b)) else 0.0
+    cash_int = 0.0
+    if lignes is not None and not lignes.empty and (lignes["ligne"] == CASH_LABEL).any():
+        cash_int = float(lignes.loc[lignes["ligne"] == CASH_LABEL, "contribution"].sum())
+    # effet des liquidités par rapport à un placement dans l'indice : intérêts reçus − ce qu'aurait
+    # rapporté le marché sur la même part
+    cash_drag = (cash_int - cash_moyen * perf_b) if (perf_b is not None and np.isfinite(perf_b)) else 0.0
     if verdict in ("moins bien", "mieux"):
         cands = []
         src = top_neg if verdict == "moins bien" else top_pos
@@ -209,11 +261,19 @@ def _compose(perf: float, perf_b: float | None, bench_name: str, lignes: pd.Data
         if len(par_classe) >= 2:
             phrases.append("Par type d'actif : " + " ; ".join(f"{k} {pts(v)}" for k, v in par_classe.items()) + ".")
     if cash_moyen > 0.10 and perf_b is not None and np.isfinite(perf_b) and abs(cash_drag) >= TOLERANCE:
-        phrases.append(f"En moyenne {pct(cash_moyen, digits=0)} du portefeuille est resté en liquidités, qui ne rapportent rien "
-                       f"dans la simulation : {'cela a freiné le portefeuille' if perf_b > 0 else 'cela l’a protégé'} "
-                       f"d'environ {pts(abs(cash_drag)).lstrip('+')} par rapport au marché.")
-    phrases.append("Lecture : un « point » correspond à 1 % de la valeur du portefeuille au début de la période ; "
-                   "les points de toutes les lignes s'additionnent pour donner la performance du portefeuille.")
+        if hypothetical:
+            phrases.append(f"En moyenne {pct(cash_moyen, digits=0)} du portefeuille est en liquidités (non rémunérées "
+                           f"dans cette simulation) : {'cela a freiné' if cash_drag < 0 else 'cela a protégé'} le "
+                           f"portefeuille d'environ {pts(abs(cash_drag)).lstrip('+')} par rapport au marché.")
+        else:
+            phrases.append(f"En moyenne {pct(cash_moyen, digits=0)} du portefeuille est resté en liquidités, rémunérées "
+                           f"au taux monétaire ({pts(cash_int)} d'intérêts) : par rapport à un placement dans "
+                           f"l'indice, {'cela a freiné' if cash_drag < 0 else 'cela a protégé'} le portefeuille "
+                           f"d'environ {pts(abs(cash_drag)).lstrip('+')}.")
+    phrases.append("Lecture : un « point » correspond à 1 % de la valeur du portefeuille ; les points de toutes les "
+                   "lignes (frais et intérêts compris) s'additionnent pour donner la performance du portefeuille, "
+                   "mesurée selon la norme GIPS (rendement pondéré dans le temps, net des frais de transaction, "
+                   "dividendes et intérêts inclus, sans effet des apports ou retraits de liquidités).")
     return dict(ok=True, verdict=verdict, perf=perf, perf_indice=perf_b, ecart=gap, cause=cause,
                 phrases=phrases, par_strategie=par_strat, par_classe=par_classe, lignes=lignes,
                 debut=debut, fin=fin, indice=bench_name, hypothetique=hypothetical)
@@ -243,7 +303,24 @@ def plain_summary(port: dict, bench_name: str = "S&P 500", start=None, end=None,
             perf_b = float(b.iloc[-1] / b.iloc[0] - 1)
     except Exception:
         perf_b = None
-    return _compose(lc["perf"], perf_b, bench_name, lc["lignes"], lc["cash_moyen"], lc["debut"], lc["fin"])
+    out = _compose(lc["perf"], perf_b, bench_name, lc["lignes"], lc["cash_moyen"], lc["debut"], lc["fin"])
+    extra = []
+    if lc.get("dividendes", 0) > 0.5 or lc.get("interets", 0) > 0.5 or lc.get("frais", 0) > 0.5:
+        extra.append(f"Revenus et coûts de la période : dividendes {_money(lc.get('dividendes', 0))}, intérêts sur "
+                     f"liquidités {_money(lc.get('interets', 0))}, frais de transaction {_money(lc.get('frais', 0))}.")
+    if abs(lc.get("apports", 0)) > 0.5:
+        a_ = lc["apports"]
+        extra.append(f"{'Apports' if a_ > 0 else 'Retraits'} de liquidités sur la période : {_money(abs(a_))}. Ils ne "
+                     "comptent pas dans la performance (rendement pondéré dans le temps).")
+    if extra:
+        out["phrases"][-1:-1] = extra
+    out.update(dividendes=lc.get("dividendes", 0.0), interets=lc.get("interets", 0.0), frais=lc.get("frais", 0.0),
+               apports=lc.get("apports", 0.0))
+    return out
+
+
+def _money(x: float) -> str:
+    return f"{x:,.0f} $".replace(",", " ")
 
 
 def plain_summary_from_values(values: dict[str, float], cash: float, prices: pd.DataFrame,

@@ -1,13 +1,35 @@
-📈 McKenson Investment Platform - MIP — version 5.6.0
+📈 McKenson Investment Platform - MIP — version 5.8.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.6.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.8.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.8 — Réalisme des marchés et performance selon GIPS
+
+💱 **Devises** : les titres cotés en EUR, GBP (pence à Londres), CHF, JPY, HKD, KRW, INR… sont convertis en USD (devise des portefeuilles) au taux de change du marché, à l'achat, à la vente, pour la valorisation et pour l'historique (taux historiques jour par jour) (utils/fx.py).
+
+💸 **Coûts de transaction** sur chaque ordre : écart achat-vente, courtage par marché avec minimum, taxe française sur les transactions financières (0,4 %) et droit de timbre britannique (0,5 %) à l'achat d'actions, commissions et écart sur les options. Prix de revient frais inclus ; contrôle de provision C07 frais compris ; les achats automatiques sont ajustés au cash disponible (utils/costs.py).
+
+💰 **Dividendes** versés en liquidités à la date de détachement, nets de la retenue à la source non récupérable (hypothèse : résident fiscal français) ; **intérêts monétaires** quotidiens sur les liquidités au taux des bons du Trésor américain à 13 semaines (^IRX, exact/360), avec rattrapage du passé (utils/income.py). Valorisation aux cours réellement cotés (dividendes versés à part).
+
+🏦 **Apports et retraits** de liquidités par l'administrateur (Administration → Tous les portefeuilles → fiche), inscrits comme flux externes dans le journal des mouvements (utils/ledger.py).
+
+📐 **Performance GIPS** partout (Dashboard, classement, rapports, comité, administration) : rendement pondéré dans le temps (TWR) à valorisation quotidienne, chaînage géométrique, flux externes neutralisés, net des coûts de transaction, revenus inclus, pas d'annualisation sous un an, composites d'équipe pondérés par les capitaux ; contributions par ligne exactement égales au TWR (lissage de Carino), avec lignes « frais » et « intérêts » ; indices de référence en rendement total et en USD (CAC 40 via ETF). Note de méthode dans les rapports.
+
+Tests : 108 (python -m pytest -q).
+
+Nouveautés v5.7 — Portefeuille proposé et ajustable + comparaison de tous les portefeuilles
+
+🧭 **Portefeuille proposé pour vous** (Trading Desk, en haut de page) : le comité construit un portefeuille complet à partir du profil de l'utilisateur, de la politique d'investissement du portefeuille et des conditions de marché réelles (régime officiel, signaux validés hors échantillon, secteurs porteurs selon la performance récente et le régime, hors PEA / UCITS). Chaque ligne est expliquée en mots simples. L'utilisateur modifie les poids, retire ou ajoute des lignes, revient à la proposition s'il le souhaite ; sa version est revue par le comité (veto possible) puis chaque ordre passe par la conformité. Exécution impossible si les cours ne sont pas réels (utils/portfolio_proposal.py, components/proposal_ui.py).
+
+📊 **Administration → Tous les portefeuilles** : tous les portefeuilles de tous les comptes (base Supabase) comparés : valeur, performance, stratégie, profil, avis du comité, liquidités, classe et thème dominants, façon dont ils ont été construits ; filtres ; indicateurs historiques à la demande (volatilité, Sharpe, perte max, bêta, surperformance vs indice) ; comparaisons par stratégie, profil, propriétaire, équipe ; carte risque / rendement ; courbes base 100 ; fiche détaillée avec « En bref » ; export CSV (utils/portfolio_census.py, components/admin_portfolios.py).
+
+Tests : 94 (python -m pytest -q).
 
 Nouveautés v5.6 — Discipline de gestion, rapports en langage simple, comité après création
 
@@ -337,4 +359,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.6.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.8.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

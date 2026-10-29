@@ -405,7 +405,10 @@ def _comparison_panel(state: dict, live: dict):
                 mkt += qty * curr; cost += qty * avg; pnl += qty * (curr - avg)
             total    = cash + mkt
             pnl_pct  = pnl / cost * 100 if cost > 0 else 0.0
-            vs_init  = (total - init) / init * 100 if init > 0 else 0.0
+            # v5.8 : performance depuis l'origine pondérée dans le temps (GIPS, sans effet des apports/retraits)
+            from utils.performance import since_inception
+            _r, _ = since_inception(port, total)
+            vs_init  = _r * 100 if _r == _r else 0.0
             strat_obj = next((s for s in _STRATEGIES if s["id"] == port.get("strategy","")), None)
             rows.append({
                 "team": tlabel,
@@ -561,6 +564,8 @@ def _performance_panel(all_ports: list):
         k[4].metric("Perte max", _v(m["Perte max"]))
     st.dataframe(df.style.format(fmt), use_container_width=True, hide_index=True)
     st.caption(
+        "Performance pondérée dans le temps (TWR, norme GIPS) : nette des frais de transaction, dividendes et "
+        "intérêts inclus, sans effet des apports ou retraits de liquidités ; pas d'annualisation sous un an. "
         f"Base 100 au premier jour d'investissement · source : {', '.join(sorted(sources))} · indice : "
         f"{bench_name} ({'disponible' if len(bench.dropna()) >= 2 else 'indisponible'}). "
         "Bêta > 1 : le portefeuille amplifie les mouvements du marché ; surperformance = performance du "

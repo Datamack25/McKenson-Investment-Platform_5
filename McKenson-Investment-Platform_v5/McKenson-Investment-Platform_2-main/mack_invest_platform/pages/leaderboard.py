@@ -86,10 +86,18 @@ def _team_ranking(teams: dict, prices: dict):
         team_init  = 0.0
         all_rets   = []
 
+        from utils.ledger import net_external
+        from utils.performance import since_inception
+        comp_w = comp_r = 0.0
         for port in portfolios.values():
             val = value_portfolio(port, prices)
             team_total += val["total"]
-            team_init  += port.get("initial_cash", 1_000_000)
+            team_init  += port.get("initial_cash", 1_000_000) + net_external(port)
+            _r, _ = since_inception(port, val["total"])      # v5.8 : TWR (GIPS)
+            if _r == _r:
+                w_ = float(port.get("initial_cash", 1_000_000) or 0)
+                comp_w += w_
+                comp_r += w_ * _r
             hist = port.get("history", [])
             if len(hist) >= 5:
                 hdf  = pd.DataFrame(hist)
@@ -98,7 +106,8 @@ def _team_ranking(teams: dict, prices: dict):
                     all_rets.extend(rets)
 
         pnl   = team_total - team_init
-        pct   = pnl / team_init * 100 if team_init else 0.0
+        # composite de l'équipe : moyenne des TWR pondérée par les capitaux (GIPS)
+        pct   = comp_r / comp_w * 100 if comp_w else 0.0
 
         # Risk metrics — computed directly on numeric data, no .str accessor
         sharpe = sortino = calmar = ann_vol = max_dd = 0.0
@@ -314,9 +323,12 @@ def _my_portfolios(teams: dict, active_team_id: str | None, prices: dict):
     for pid, port in active_ports.items():
         val   = value_portfolio(port, prices)
         total = val["total"]
+        from utils.ledger import net_external
+        from utils.performance import since_inception
         init  = port.get("initial_cash", 1_000_000)
-        pnl   = total - init
-        pct   = pnl / init * 100 if init else 0.0
+        pnl   = total - init - net_external(port)          # résultat hors apports / retraits
+        _r, _ = since_inception(port, total)                # v5.8 : TWR (GIPS)
+        pct   = _r * 100 if _r == _r else 0.0
         strat = port.get("strategy", "")
         hint  = _SH.get(strat, ("—", "#94a3b8", ""))
 

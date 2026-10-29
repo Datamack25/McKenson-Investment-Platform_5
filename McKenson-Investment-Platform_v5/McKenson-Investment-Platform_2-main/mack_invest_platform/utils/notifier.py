@@ -146,8 +146,15 @@ def _valuation(port: dict) -> dict:
     val = value_portfolio(port, prices)
     init = float(port.get("initial_cash", 1_000_000) or 0)
     val["initial"] = init
-    val["pnl"] = val["total"] - init
-    val["pnl_pct"] = (val["pnl"] / init * 100) if init else 0.0
+    try:  # v5.8 : résultat hors apports / retraits, performance pondérée dans le temps (GIPS)
+        from utils.ledger import net_external
+        from utils.performance import since_inception
+        val["pnl"] = val["total"] - init - net_external(port)
+        r_ = since_inception(port, val["total"])[0]
+        val["pnl_pct"] = r_ * 100 if r_ == r_ else 0.0
+    except Exception:
+        val["pnl"] = val["total"] - init
+        val["pnl_pct"] = (val["pnl"] / init * 100) if init else 0.0
     return val
 
 

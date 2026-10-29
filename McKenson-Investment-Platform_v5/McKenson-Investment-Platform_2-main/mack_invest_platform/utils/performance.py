@@ -25,24 +25,44 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+# v5.8 : indices de référence en RENDEMENT TOTAL (dividendes réinvestis, via des ETF répliquant
+# l'indice, cours ajustés) et en USD, comme le portefeuille (GIPS : indice cohérent en devise).
 BENCHMARKS = {
     "S&P 500": "SPY",
     "MSCI World": "URTH",
     "Nasdaq 100": "QQQ",
-    "CAC 40": "^FCHI",
+    "CAC 40": "C40.PA",
     "60 % actions / 40 % obligations": "60/40",
 }
+BENCHMARK_NOTE = ("Indices en rendement total (dividendes réinvestis), mesurés au travers d'un ETF qui les "
+                  "réplique (frais de l'ETF inclus) et convertis en USD.")
 RF = 0.03  # taux sans risque annuel retenu pour le ratio de Sharpe
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def price_history(tickers: tuple, start: str) -> pd.DataFrame:
-    """Clôtures quotidiennes depuis `start` (ffill). DataFrame vide si indisponible."""
+    """Clôtures quotidiennes AJUSTÉES des dividendes (rendement total), converties en USD au taux
+    historique (v5.8), depuis `start` (ffill). Sert au risque, aux indices et aux signaux.
+    DataFrame vide si indisponible."""
+    from utils.fx import convert_history
+    return convert_history(_download(tickers, start, True), start)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def valuation_history(tickers: tuple, start: str) -> pd.DataFrame:
+    """Clôtures NON ajustées des dividendes (cours réellement cotés, ajustés des divisions d'actions),
+    converties en USD au taux historique. Sert à la valorisation des portefeuilles : les dividendes
+    sont versés à part, en liquidités (journal des mouvements), comme chez un teneur de compte."""
+    from utils.fx import convert_history
+    return convert_history(_download(tickers, start, False), start)
+
+
+def _download(tickers: tuple, start: str, adjusted: bool) -> pd.DataFrame:
     if not tickers:
         return pd.DataFrame()
     try:
         import yfinance as yf
-        raw = yf.download(list(tickers), start=start, interval="1d", auto_adjust=True,
+        raw = yf.download(list(tickers), start=start, interval="1d", auto_adjust=adjusted,
                           progress=False, threads=True)
         px = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
         if isinstance(px, pd.Series):
@@ -64,7 +84,8 @@ def _spot_trades(port: dict) -> pd.DataFrame:
             continue
         try:
             rows.append(dict(date=pd.to_datetime(t.get("date")), ticker=t["ticker"], action=a,
-                             qty=float(t.get("qty", 0)), price=float(t.get("price", 0))))
+                             qty=float(t.get("qty", 0)), price=float(t.get("price", 0)),
+                             frais=float(t.get("frais", 0) or 0)))
         except Exception:
             continue
     df = pd.DataFrame(rows)
@@ -109,13 +130,16 @@ def nav_detail(port: dict, prices: pd.DataFrame | None = None, include_options: 
     La NAV est la somme des colonnes. DataFrame vide si aucune transaction ni option."""
     tr = _spot_trades(port)
     opts = _option_positions(port) if include_options else []
-    if tr.empty and not opts:
+    from utils import ledger as LG
+    mv = LG.movements(port)
+    if tr.empty and not opts and mv.empty:
         return pd.DataFrame()
-    dates = ([tr["date"].min()] if not tr.empty else []) + [o["date"] for o in opts]
+    dates = ([tr["date"].min()] if not tr.empty else []) + [o["date"] for o in opts] + \
+        ([mv["date"].min()] if not mv.empty else [])
     start = min(dates).normalize()
     tickers = tuple(sorted(set(tr["ticker"].unique() if not tr.empty else []) | {o["ticker"] for o in opts}))
-    if prices is None:
-        prices = price_history(tickers, start.strftime("%Y-%m-%d"))
+    if prices is None:   # v5.8 : cours réellement cotés (non ajustés des dividendes), en USD
+        prices = valuation_history(tickers, start.strftime("%Y-%m-%d"))
     end = pd.Timestamp(datetime.now().date())
     days = pd.bdate_range(start, end)
     if prices is not None and not prices.empty:
@@ -134,7 +158,8 @@ def nav_detail(port: dict, prices: pd.DataFrame | None = None, include_options: 
     rows = []
     trades = tr.to_dict("records") if not tr.empty else []
     opts = sorted(opts, key=lambda o: o["date"])
-    i = j = 0
+    moves = mv.to_dict("records") if not mv.empty else []
+    i = j = m_ = 0
 
     def px_at(tk, d):
         if prices is not None and tk in getattr(prices, "columns", []):
@@ -148,9 +173,12 @@ def nav_detail(port: dict, prices: pd.DataFrame | None = None, include_options: 
             t = trades[i]
             sgn = 1 if t["action"] == "BUY" else -1
             qty[t["ticker"]] += sgn * t["qty"]
-            cash -= sgn * t["qty"] * t["price"]
+            cash -= sgn * t["qty"] * t["price"] + t.get("frais", 0.0)   # v5.8 : frais déduits
             last_px.setdefault(t["ticker"], t["price"])
             i += 1
+        while m_ < len(moves) and moves[m_]["date"].normalize() <= d:   # dividendes, intérêts, apports…
+            cash += float(moves[m_]["montant"])
+            m_ += 1
         while j < len(opts) and opts[j]["date"].normalize() <= d:
             o = opts[j]
             cash -= o["sign"] * o["premium"] * o["units"]      # prime payée (achat) ou encaissée (vente)
@@ -192,15 +220,41 @@ def snapshots_nav(port: dict) -> pd.Series:
         return pd.Series(dtype=float)
 
 
+def external_flows(port: dict, index: pd.DatetimeIndex) -> pd.Series:
+    """Apports (+) et retraits (−) de liquidités par jour : flux EXTERNES neutralisés par le TWR."""
+    from utils import ledger as LG
+    return LG.daily_sum(port, LG.EXTERNAL, index)
+
+
 def portfolio_series(port: dict) -> tuple[pd.Series, str]:
-    """(NAV quotidienne, source) — reconstitution par les transactions, sinon snapshots."""
+    """(Indice de performance pondérée dans le temps, source).
+    v5.8 — norme GIPS : valorisation quotidienne et rendement pondéré dans le temps (TWR) chaîné
+    géométriquement ; les apports et retraits de liquidités (flux externes, y compris ceux de
+    l'administrateur) n'affectent pas la performance. L'indice démarre à la valeur du premier jour :
+    base100() donne la performance, metrics() les indicateurs."""
+    from utils import ledger as LG
     s = reconstruct_nav(port)
     if len(s) >= 2:
-        return s, "transactions + cours historiques"
+        return LG.twr_index(s, external_flows(port, s.index)).rename(s.name), \
+            "transactions + cours historiques (TWR, GIPS)"
     s2 = snapshots_nav(port)
     if len(s2) >= 2:
-        return s2, "snapshots quotidiens enregistrés"
+        return LG.twr_index(s2, external_flows(port, s2.index)).rename(s2.name), \
+            "snapshots quotidiens enregistrés (TWR)"
     return s, "historique insuffisant"
+
+
+def since_inception(port: dict, nav_now: float | None = None) -> tuple[float, str]:
+    """Performance depuis la création (TWR). Sans flux externe, valeur / capital initial − 1
+    (identique au TWR) ; avec des apports ou retraits, TWR reconstitué. Renvoie (rendement, méthode)."""
+    from utils import ledger as LG
+    init = float(port.get("initial_cash") or 0.0)
+    if not LG.has_external_flows(port) and nav_now is not None and init > 0:
+        return nav_now / init - 1, "valeur / capital initial (aucun flux externe)"
+    s, src = portfolio_series(port)
+    if len(s.dropna()) >= 2:
+        return float(s.dropna().iloc[-1] / s.dropna().iloc[0] - 1), "TWR (GIPS)"
+    return float("nan"), "historique insuffisant"
 
 
 def benchmark_series(name: str, start: pd.Timestamp) -> pd.Series:
@@ -220,7 +274,8 @@ def benchmark_series(name: str, start: pd.Timestamp) -> pd.Series:
 
 def metrics(nav: pd.Series, bench: pd.Series | None = None) -> dict:
     """Indicateurs de gestion. Les ratios annualisés exigent au moins 5 points."""
-    out = {"Performance": np.nan, "Volatilité (ann.)": np.nan, "Perte max": np.nan, "Sharpe": np.nan,
+    out = {"Performance": np.nan, "Performance annualisée": np.nan, "Volatilité (ann.)": np.nan,
+           "Perte max": np.nan, "Sharpe": np.nan,
            "Bêta": np.nan, "Perf. indice": np.nan, "Surperformance": np.nan,
            "Écart de suivi": np.nan, "Ratio d'information": np.nan, "Jours": 0}
     nav = nav.dropna()
@@ -229,6 +284,9 @@ def metrics(nav: pd.Series, bench: pd.Series | None = None) -> dict:
     r = nav.pct_change().dropna()
     out["Jours"] = len(nav)
     out["Performance"] = float(nav.iloc[-1] / nav.iloc[0] - 1)
+    from utils.ledger import annualize   # GIPS : pas d'annualisation sur moins d'un an
+    ann_ = annualize(out["Performance"], int((nav.index[-1] - nav.index[0]).days))
+    out["Performance annualisée"] = np.nan if ann_ is None else float(ann_)
     out["Perte max"] = float((nav / nav.cummax() - 1).min())
     if len(r) >= 5 and r.std() > 0:
         vol = float(r.std() * np.sqrt(252))
@@ -303,8 +361,18 @@ def attribution(port: dict, prices: pd.DataFrame | None = None, profile: str | N
     start = min(([tr["date"].min()] if not tr.empty else []) + [o["date"] for o in opts]).normalize()
     tickers = set(tr["ticker"].unique()) if not tr.empty else set()
     tickers |= {o["ticker"] for o in opts} | set(A.CLASS_PROXY.values())
+    bench_px = None
     if prices is None:
-        prices = price_history(tuple(sorted(tickers)), start.strftime("%Y-%m-%d"))
+        # v5.8 : lignes valorisées aux cours cotés (dividendes versés en liquidités) ;
+        # allocation stratégique de référence en rendement total (ETF ajustés des dividendes)
+        held = tuple(sorted(tickers - set(A.CLASS_PROXY.values()) | (set(tr["ticker"]) if not tr.empty else set())))
+        val = valuation_history(held, start.strftime("%Y-%m-%d")) if held else pd.DataFrame()
+        tr_px = price_history(tuple(sorted(set(A.CLASS_PROXY.values()))), start.strftime("%Y-%m-%d"))
+        bench_px = tr_px
+        prices = tr_px.combine_first(val) if val is not None and not val.empty else tr_px
+        if val is not None and not val.empty:
+            for c in val.columns:          # une ligne détenue garde ses cours cotés, même si c'est un proxy
+                prices[c] = val[c].reindex(prices.index).ffill()
     if prices is None or prices.empty:
         return dict(ok=False, detail="Cours historiques indisponibles.")
     det = nav_detail(port, prices)
@@ -312,15 +380,17 @@ def attribution(port: dict, prices: pd.DataFrame | None = None, profile: str | N
     if len(det) < 6:
         return dict(ok=False, detail="Historique trop court (au moins 6 séances).")
     nav = det.sum(axis=1)
-    rp = nav.pct_change().dropna()
+    from utils import ledger as LG          # v5.8 : rendements pondérés dans le temps (flux externes neutralisés)
+    rp = LG.twr_returns(nav, external_flows(port, nav.index))
     px = prices.reindex(det.index).ffill()
     spot_cols = [c for c in det.columns if c not in ("CASH", "OPTIONS")]
     cls_of = {t: (A.classify_ticker(t) or "Actions US") for t in spot_cols}
     prev = det.shift(1).iloc[1:]
-    nav_prev = nav.shift(1).iloc[1:]
+    nav_prev = (nav.shift(1) + external_flows(port, nav.index)).iloc[1:]
     r_tk = px[spot_cols].pct_change().iloc[1:].fillna(0.0) if spot_cols else pd.DataFrame(index=prev.index)
     proxies = {c: A.CLASS_PROXY[c] for c in A.CLASSES}
-    r_b = pd.DataFrame({c: px[t].pct_change() if t in px.columns else 0.0 for c, t in proxies.items()},
+    bpx = bench_px.reindex(det.index).ffill() if bench_px is not None and not bench_px.empty else px
+    r_b = pd.DataFrame({c: bpx[t].pct_change() if t in bpx.columns else 0.0 for c, t in proxies.items()},
                        index=px.index).iloc[1:].fillna(0.0)
     Rb = (r_b * wb).sum(axis=1)
 
@@ -330,7 +400,7 @@ def attribution(port: dict, prices: pd.DataFrame | None = None, profile: str | N
         c = cls_of[t]
         w_p[c] += prev[t] / nav_prev
         contrib_p[c] += prev[t] / nav_prev * r_tk[t]
-    w_p["Liquidités"] += prev["CASH"] / nav_prev             # le cash non investi ne rapporte rien
+    w_p["Liquidités"] += prev["CASH"] / nav_prev             # intérêts monétaires : effet « revenus »
     w_opt = prev["OPTIONS"] / nav_prev
     spot_total = contrib_p.sum(axis=1)
     resid = rp.reindex(prev.index) - spot_total               # options + effets de négociation
@@ -345,7 +415,7 @@ def attribution(port: dict, prices: pd.DataFrame | None = None, profile: str | N
     tab["Total"] = tab.sum(axis=1)
     tab["Poids moyen portefeuille"] = w_p.mean()
     tab["Poids stratégique"] = wb
-    tab.loc["Options et négociation"] = [float((opt_eff * k).sum()), 0.0, 0.0, float((opt_eff * k).sum()),
+    tab.loc["Options, revenus, frais et négociation"] = [float((opt_eff * k).sum()), 0.0, 0.0, float((opt_eff * k).sum()),
                                          float(w_opt.mean()), 0.0]
     Rp_tot, Rb_tot = float((1 + rp).prod() - 1), float((1 + Rb).prod() - 1)
     act = rp.reindex(prev.index) - Rb

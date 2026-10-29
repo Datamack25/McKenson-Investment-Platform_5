@@ -194,7 +194,10 @@ def _last_prices(tickers: tuple) -> dict:
         d = yf.download(list(tickers), period="5d", auto_adjust=True, progress=False)["Close"]
         if isinstance(d, pd.Series):
             d = d.to_frame(tickers[0])
-        return {t: float(d[t].dropna().iloc[-1]) for t in tickers if t in d and d[t].notna().any()}
+        out = {t: float(d[t].dropna().iloc[-1]) for t in tickers if t in d and d[t].notna().any()}
+        from utils.fx import usd_factors       # v5.8 : valorisation en USD
+        f = usd_factors(list(out))
+        return {t: v * f.get(t, 1.0) for t, v in out.items()}
     except Exception:
         return {}
 

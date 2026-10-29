@@ -277,6 +277,11 @@ def portfolio_images(ctx: dict, theme="light") -> dict[str, bytes]:
     return imgs
 
 
+def _twr(port: dict, nav: float) -> float:
+    from utils.performance import since_inception
+    return since_inception(port, nav)[0]
+
+
 def portfolio_pdf(ctx: dict) -> bytes:
     port, val, nav = ctx["port"], ctx["val"], ctx["nav"]
     imgs = ctx.get("images") or portfolio_images(ctx)
@@ -284,7 +289,7 @@ def portfolio_pdf(ctx: dict) -> bytes:
     from utils.plain_summary import pdf_blocks
     blocks = pdf_blocks(ctx.get("simple"))
     blocks += [("kpis", [
-        ("Valeur totale", f"{nav:,.0f} $"), ("Performance depuis l'origine", _fmt_pct(nav / init - 1, True)),
+        ("Valeur totale", f"{nav:,.0f} $"), ("Performance depuis l'origine (TWR)", _fmt_pct(_twr(port, nav), True)),
         ("Liquidités", f"{val['cash']:,.0f} $"), ("Positions", str(len(ctx["pos"]))),
         ("Capital initial", f"{init:,.0f} $"), ("P&L latent", f"{ctx['pos']['unreal_pnl'].sum():+,.0f} $" if len(ctx['pos']) else "—"),
         ("Stratégie", str(port.get("strategy", "—"))), ("Ordres passés", str(len(port.get("trades", [])))),

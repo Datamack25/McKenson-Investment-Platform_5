@@ -331,6 +331,8 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
                [[t, str(r["Classe"]), f"{r['Poids']:.1%}",
                  _pct(r.get("Part du risque")) if "Part du risque" in lines else "—"] for t, r in lines.iterrows()],
                [3.5, 6.0, 3.0, 4.5])]
+    from utils.investor_report import METHOD_NOTE
+    b.append(("note", METHOD_NOTE))
     b.append(("note", "Les membres du comité (Jean-Michel TAUX-BAS, Mc Henson ALGO-RITHME, Thierry BALANCEMENT, Aline DE MARGE, "
                       "Constance Probité, Marc ETING-FINANCIER) sont des personnages fictifs ; les citations de "
                       "vrais investisseurs illustrent le style dont chaque rôle s'inspire. "

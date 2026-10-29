@@ -91,9 +91,12 @@ def render():
         st.warning("⚠️ Historiques Yahoo Finance indisponibles : les courbes de performance utilisent des données simulées.")
     m = ctx.get("metrics", {})
     init = float(port.get("initial_cash", ctx["nav"]) or ctx["nav"])
+    from utils.performance import since_inception
+    _r0 = since_inception(port, ctx["nav"])[0]
     kpi_row([
         kpi("Valeur totale", f"{ctx['nav']:,.0f} $"),
-        kpi("Depuis l'origine", f"{ctx['nav'] / init - 1:+.2%}", color="#00ff88" if ctx["nav"] >= init else "#ff3b6b"),
+        kpi("Depuis l'origine (TWR)", f"{_r0:+.2%}" if _r0 == _r0 else "—",
+            color="#00ff88" if _r0 == _r0 and _r0 >= 0 else "#ff3b6b"),
         kpi("Positions", str(len(ctx["pos"]))),
         kpi("Volatilité 1 an (simulée)", f"{m['Volatilité']:.1%}" if m else "—"),
         kpi("Drawdown max 1 an", f"{m['Drawdown max']:.1%}" if m else "—", color="#ff3b6b"),

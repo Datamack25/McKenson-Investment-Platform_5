@@ -91,8 +91,8 @@ def render():
     # ── Comité virtuel : politique d'investissement et validation du portefeuille ─
     from components.committee_ui import committee_panel
     committee_panel(port, key=f"td_cm_{port_id}")
-    from components.committee_followup import followup_panel
-    followup_panel(port, key=f"td_fu_{port_id}")
+    from components.proposal_ui import proposal_panel
+    proposal_panel(port, key=f"td_pp_{port_id}")
 
     # ── Sélecteur de stratégie ────────────────────────────────────────────────
     current_type = normalize_port_type(port)
@@ -323,6 +323,16 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
             f'Valeur ordre : <b style="color:#ffd700;">${total_order:,.2f}</b>'
             f'</div></div>', unsafe_allow_html=True)
 
+        # v5.8 : coûts de transaction estimés (écart, courtage, taxes de bourse)
+        from utils.costs import spot_costs
+        _c = spot_costs(ticker, "BUY" if is_buy else "SELL", qty, price)
+        _net = qty * _c["prix"] + (_c["frais"] if is_buy else -_c["frais"])
+        st.markdown(
+            f'<div style="border-left:3px solid #ffd700;background:rgba(255,215,0,.05);border-radius:4px;'
+            f'padding:6px 12px;font-family:Share Tech Mono;font-size:.7rem;color:#cbd5e1;line-height:1.6;margin:4px 0;">'
+            f'💸 <b>Coûts estimés</b> — prix d\'exécution {"acheteur" if is_buy else "vendeur"} ${_c["prix"]:,.4f} '
+            f'(cours médian ${price:,.4f}) · frais ${_c["frais"]:,.2f}<br>{_c["detail"]}<br>'
+            f'<b>{"Débit" if is_buy else "Crédit"} total : ${_net:,.2f}</b></div>', unsafe_allow_html=True)
         # Contrôles de conformité pré-négociation (mêmes contrôles qu'à l'exécution)
         decision = pre_trade_spot(port, ticker, "BUY" if is_buy else "SELL", qty, price,
                                   category=str(a_s.get("category", "Equity")))
@@ -513,6 +523,13 @@ def _options_desk(port, state, team_id, port_id, assets_df):
             st.error("⛔ Ordre bloqué par la conformité : " + decision.short_reason())
             return
         from utils.options import book_option   # une ligne par instrument (v5.5)
+        from utils.costs import option_costs    # v5.8 : écart sur la prime + commission par contrat
+        from utils import ledger as LG
+        _oc = option_costs("BUY" if is_buy_opt else "SELL", n_contracts, premium)
+        premium = _oc["prime"]
+        total_premium = premium * n_contracts * mult
+        if _oc["frais"]:
+            LG.add(port, "frais", _oc["frais"], ticker=ticker, detail=f"commission {n_contracts} contrat(s) d'options")
         _book = book_option(port, {
             "date":          datetime.now().strftime("%Y-%m-%d %H:%M"),
             "ticker":        ticker,
@@ -526,7 +543,7 @@ def _options_desk(port, state, team_id, port_id, assets_df):
             "premium":       round(premium, 6),
             "total_premium": round(total_premium, 2),
             "spot_at_entry": round(spot, 4),
-            "currency":      get_currency(ticker),
+            "currency":      "USD",   # v5.8 : primes en USD
         })
         port["cash"] = port.get("cash",0) + (-total_premium if is_buy_opt else total_premium)
         port.setdefault("trades",[]).append({
@@ -742,19 +759,25 @@ def _strategy_desk(port, assets_df):
                 if err:
                     st.error(err)
                     return
+        from utils.costs import option_costs    # v5.8 : écart sur la prime + commission par contrat
+        from utils import ledger as LG
         for l in legs:
             if l["type"] == "stock":
                 continue
             buy = l["qty"] > 0
             k = abs(int(l["qty"]))
+            _oc = option_costs("BUY" if buy else "SELL", k, l["premium"])
+            l = {**l, "premium": _oc["prime"]}
             tot = l["premium"] * k * mult
+            if _oc["frais"]:
+                LG.add(port, "frais", _oc["frais"], date=now, ticker=ticker, detail=f"commission {name}")
             from utils.options import book_option   # une ligne par instrument (v5.5)
             book_option(port, {
                 "date": now, "ticker": ticker, "type": l["type"], "action": "BUY" if buy else "SELL",
                 "strike": round(l["K"], 4), "maturity_days": T_days, "sigma": round(sigma * 100, 2),
                 "n_contracts": k, "contract_mult": mult, "premium": round(l["premium"], 6),
                 "total_premium": round(tot, 2), "spot_at_entry": round(spot, 4),
-                "currency": get_currency(ticker), "strategy": name, "strategy_id": sid,
+                "currency": "USD", "strategy": name, "strategy_id": sid,
             })
             port["cash"] = port.get("cash", 0) + (-tot if buy else tot)
         port.setdefault("trades", []).append({

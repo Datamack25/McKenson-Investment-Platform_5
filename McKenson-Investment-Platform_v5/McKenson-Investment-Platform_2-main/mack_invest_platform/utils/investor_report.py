@@ -28,9 +28,14 @@ from utils import plain_summary as PS
 GLOSSARY = [
     ("Indice de référence", "Un panier d'actions qui représente « le marché » (par exemple le S&P 500). Le comparer au "
                             "portefeuille dit si la gestion a apporté quelque chose."),
-    ("Point", "1 % de la valeur du portefeuille au début de la période. Les points de toutes les lignes "
+    ("Point", "1 % de la valeur du portefeuille. Les points de toutes les lignes (frais et intérêts compris) "
               "s'additionnent pour donner la performance."),
-    ("Liquidités", "L'argent non investi. Il protège en cas de baisse mais ne rapporte rien quand le marché monte."),
+    ("Rendement pondéré dans le temps (TWR)", "La façon standard de mesurer la performance d'un gérant : elle ne "
+                                              "dépend pas des sommes ajoutées ou retirées par l'investisseur."),
+    ("Frais de transaction", "L'écart entre prix d'achat et de vente, le courtage et les taxes de bourse, payés à "
+                             "chaque ordre et déduits de la performance."),
+    ("Liquidités", "L'argent non investi. Il est rémunéré au taux monétaire et protège en cas de baisse, mais "
+                   "rapporte moins que les actions quand le marché monte."),
     ("Perte potentielle (VaR 95 %)", "La perte qu'on ne devrait dépasser qu'une année sur vingt, d'après le "
                                      "comportement passé des marchés. Ce n'est pas une perte maximale garantie."),
     ("Dérogation", "Un dépassement temporaire, justifié par écrit et notifié à l'avance, de la limite de poids "
@@ -38,6 +43,16 @@ GLOSSARY = [
     ("Thèse d'investissement", "La raison écrite, avant l'ordre, pour laquelle on achète ou vend, avec les dangers "
                                "identifiés et ce qui ferait changer d'avis."),
 ]
+
+
+METHOD_NOTE = (
+    "Méthode (norme GIPS) : performance pondérée dans le temps (TWR), valorisation quotidienne aux cours de "
+    "clôture convertis en USD au taux de change du jour, rendements quotidiens chaînés géométriquement ; les "
+    "apports et retraits de liquidités sont neutralisés. Performance nette des coûts de transaction (écart "
+    "achat-vente, courtage, taxes de bourse) ; dividendes nets de retenue à la source non récupérable et intérêts "
+    "monétaires (bons du Trésor américain à 13 semaines) inclus ; impôts personnels non déduits. Aucun rendement "
+    "n'est annualisé sur une période de moins d'un an. Indice de référence en rendement total (dividendes "
+    "réinvestis), en USD. Données Yahoo Finance différées.")
 
 
 def month_bounds(label: str | None = None, today: date | None = None) -> tuple[date, date, str]:
@@ -111,10 +126,15 @@ def build(port: dict, period: str | None = None, bench_name: str = "S&P 500", re
                            ("Écart avec l'indice", PS.pts(simple.get("ecart"))),
                            ("Plus forte baisse dans le mois", PS.pct(mdd, True)),
                            ("Liquidités en moyenne", PS.pct(lc["cash_moyen"], digits=0)),
-                           ("Ordres passés", str(len(journal)))]))
+                           ("Ordres passés", str(len(journal))),
+                           ("Dividendes reçus", _fmt_money(lc.get("dividendes", 0.0))),
+                           ("Intérêts sur liquidités", _fmt_money(lc.get("interets", 0.0))),
+                           ("Frais de transaction", _fmt_money(lc.get("frais", 0.0))),
+                           ("Apports − retraits", _fmt_money(lc.get("apports", 0.0)))]))
         b.append(("note", "« Plus forte baisse dans le mois » : la plus grande chute de valeur entre un sommet et un "
                           "creux pendant le mois. Elle mesure ce qu'un investisseur a pu ressentir, même si le mois "
                           "s'est bien terminé."))
+        b.append(("note", METHOD_NOTE))
     else:
         b.append(("p", "Historique insuffisant sur ce mois pour calculer la performance (portefeuille créé récemment "
                        "ou sans transaction)."))

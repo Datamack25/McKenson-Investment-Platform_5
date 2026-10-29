@@ -518,11 +518,16 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
     elif why:
         d.add("C02", "warn", f"{why} — cession autorisée pour sortir de la position.")
 
-    # C07 — provision / position
+    # C07 — provision / position (v5.8 : frais, écart et taxes de bourse compris)
+    try:
+        from utils.costs import total_cost
+        debit = total_cost(ticker, "BUY", float(qty), float(price)) if buy else amount
+    except Exception:
+        debit = amount
     if qty <= 0 or price <= 0:
         d.add("C07", "block", "Quantité ou prix invalide.")
-    elif buy and amount > cash + 0.01:
-        d.add("C07", "block", f"Ordre de {amount:,.2f} $ pour {cash:,.2f} $ de liquidités.")
+    elif buy and debit > cash + 0.01:
+        d.add("C07", "block", f"Ordre de {debit:,.2f} $ frais compris pour {cash:,.2f} $ de liquidités.")
     elif not buy and qty > held + 1e-6:
         d.add("C07", "block", f"Vente de {qty:,.4f} titres pour {held:,.4f} détenus (vente à découvert interdite).")
     else:

@@ -352,6 +352,17 @@ from utils.data import get_or_init_state, persist
 
 state = get_or_init_state()
 
+# ── v5.8 : revenus du jour (dividendes détachés, intérêts monétaires sur les liquidités) ──
+if st.session_state.get("_revenus_jour") != str(datetime.now().date()):
+    try:
+        from utils.income import update_state
+        _bilan = update_state(state)
+        st.session_state["_revenus_jour"] = str(datetime.now().date())
+        if _bilan["portefeuilles"]:
+            persist()
+    except Exception:
+        pass
+
 # ── Notifications email (référence + alerte de variation de valeur) ───────────
 try:
     from utils.notifier import init_baseline, check_nav_moves

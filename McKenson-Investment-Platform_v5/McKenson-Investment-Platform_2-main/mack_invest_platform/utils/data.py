@@ -88,10 +88,19 @@ def get_quote(ticker: str) -> tuple[float, float, str]:
             except Exception:
                 prev = float("nan")
             pct = (price - prev) / prev * 100 if prev and prev == prev and prev > 0 else 0.0
-            return price, pct, PRICE_LIVE
+            return _usd(ticker, price), pct, PRICE_LIVE
         except Exception:
             pass
-    return _FB.get(ticker, 100.0), _FB_PCT.get(ticker, 0.0), PRICE_FALLBACK
+    return _usd(ticker, _FB.get(ticker, 100.0)), _FB_PCT.get(ticker, 0.0), PRICE_FALLBACK
+
+
+def _usd(ticker: str, price: float) -> float:
+    """v5.8 : cours converti dans la devise des portefeuilles (USD), au taux de change du marché."""
+    try:
+        from utils.fx import to_usd
+        return to_usd(ticker, price)
+    except Exception:
+        return price
 
 
 def get_price(ticker: str) -> float:
@@ -132,6 +141,12 @@ def _multi_quotes(tickers: tuple) -> dict[str, tuple[float, float, str]]:
     for t in tickers:
         if t not in result:
             result[t] = (_FB.get(t,100.0), _FB_PCT.get(t,0.0), PRICE_FALLBACK)
+    try:  # v5.8 : conversion en USD au taux de change du marché
+        from utils.fx import usd_factors
+        f = usd_factors(list(result))
+        result = {t: (p * f.get(t, 1.0), pct, src) for t, (p, pct, src) in result.items()}
+    except Exception:
+        pass
     return result
 
 
@@ -453,7 +468,11 @@ def _auto_snapshot(port_id: str, port: dict):
         cash      = port.get("cash", 0)
         nav       = cash + spot_val
         init      = port.get("initial_cash", INITIAL_CASH)
-        total_pnl = nav - init
+        try:  # v5.8 : hors apports / retraits de liquidités (flux externes)
+            from utils.ledger import net_external
+            total_pnl = nav - init - net_external(port)
+        except Exception:
+            total_pnl = nav - init
         pnl_pct   = total_pnl / init * 100 if init else 0
 
         save_snapshot(
@@ -522,6 +541,50 @@ def compute_risk_metrics(returns: "pd.Series") -> dict | None:
 compute_portfolio_metrics = compute_risk_metrics
 
 
+def apply_trade(portfolio: dict, ticker: str, action: str, qty: float, mid_price: float) -> dict | str:
+    """v5.8 — exécution simulée réaliste d'un ordre au comptant (sans contrôle de conformité) :
+    prix d'exécution = cours médian ± demi-écart, courtage et taxes de bourse (utils/costs.py),
+    prix de revient unitaire frais inclus. Renvoie l'écriture de l'ordre, ou un message d'erreur."""
+    from utils.costs import spot_costs
+    h = portfolio.setdefault("holdings", {})
+    c = spot_costs(ticker, action, qty, mid_price)
+    px, fees = c["prix"], c["frais"]
+    gross = qty * px
+    if action == "BUY":
+        if gross + fees > portfolio.get("cash", 0) + 0.01:
+            return (f"Fonds insuffisants : {gross + fees:,.2f} $ frais compris pour "
+                    f"{portfolio.get('cash', 0):,.2f} $ de liquidités")
+        portfolio["cash"] -= gross + fees
+        if ticker in h:
+            oq, oa = h[ticker]["qty"], h[ticker]["avg_price"]
+            nq = oq + qty
+            h[ticker] = {"qty": nq, "avg_price": (oq * oa + gross + fees) / nq}
+        else:
+            h[ticker] = {"qty": qty, "avg_price": (gross + fees) / qty}
+    elif action == "SELL":
+        avail = h.get(ticker, {}).get("qty", 0)
+        if avail < qty - 1e-9:
+            return f"Position insuffisante ({avail:.4f} dispo)"
+        portfolio["cash"] = portfolio.get("cash", 0) + gross - fees
+        h[ticker]["qty"] -= qty
+        if h[ticker]["qty"] < 1e-9:
+            del h[ticker]
+    else:
+        return f"Action invalide: {action}"
+    entry = {"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "ticker": ticker, "action": action,
+             "qty": round(qty, 6), "price": round(px, 6), "total": round(gross, 2), "frais": round(fees, 2),
+             "prix_marche": round(float(mid_price), 6), "detail_frais": c["detail"]}
+    try:
+        from utils.fx import quote_currency, rates
+        ccy = quote_currency(ticker)
+        if ccy != "USD":
+            entry["devise_cotation"], entry["taux_change"] = ccy, round(rates([ccy])[ccy], 8)
+    except Exception:
+        pass
+    portfolio.setdefault("trades", [])
+    return entry
+
+
 def record_trade(portfolio: dict, ticker: str, action: str,
                  qty: float, price: float, enforce: bool = True, source: str = "",
                  meta: dict | None = None) -> str:
@@ -541,30 +604,14 @@ def record_trade(portfolio: dict, ticker: str, action: str,
             except Exception:
                 pass
             return "⛔ Ordre bloqué par la conformité : " + decision.short_reason()
-    total=qty*price; h=portfolio.setdefault("holdings",{}); tr=portfolio.setdefault("trades",[])
-    if action=="BUY":
-        if total>portfolio.get("cash",0)+0.01:
-            return f"Fonds insuffisants (cash: ${portfolio.get('cash',0):,.0f})"
-        portfolio["cash"]-=total
-        if ticker in h:
-            oq,oa=h[ticker]["qty"],h[ticker]["avg_price"]; nq=oq+qty
-            h[ticker]={"qty":nq,"avg_price":(oq*oa+qty*price)/nq}
-        else:
-            h[ticker]={"qty":qty,"avg_price":price}
-    elif action=="SELL":
-        avail=h.get(ticker,{}).get("qty",0)
-        if avail<qty-1e-9: return f"Position insuffisante ({avail:.4f} dispo)"
-        portfolio["cash"]=portfolio.get("cash",0)+total
-        h[ticker]["qty"]-=qty
-        if h[ticker]["qty"]<1e-9: del h[ticker]
-    else: return f"Action invalide: {action}"
-    entry = {"date":datetime.now().strftime("%Y-%m-%d %H:%M"),
-             "ticker":ticker,"action":action,
-             "qty":round(qty,6),"price":round(price,6),"total":round(total,2)}
+    entry = apply_trade(portfolio, ticker, action, qty, price)
+    if isinstance(entry, str):
+        return entry
     if source:
         entry["source"] = source
     if meta:  # v5.6 : thèse d'investissement horodatée, dérogation utilisée…
         entry.update(meta)
+    tr = portfolio.setdefault("trades", [])
     if decision is not None:
         entry["conformite"] = "contrôlé" + (f" ({len(decision.warnings)} alerte(s))" if decision.warnings else "")
         try:

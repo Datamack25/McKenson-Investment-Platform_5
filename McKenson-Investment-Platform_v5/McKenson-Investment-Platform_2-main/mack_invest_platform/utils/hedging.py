@@ -272,9 +272,16 @@ def execute_hedge(port: dict, h: dict, tag: str = "Hedge Fund Agent") -> str:
                      a["net_premium"], executed=dec.allowed, note=f"{tag} — {h['panier']}")
         if not dec.allowed:
             return f"{h['panier']} bloquée — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks)
+        from utils.costs import option_costs    # v5.8 : écart sur la prime + commission par contrat
+        from utils import ledger as LG
         for l in h["legs"]:
             buy = l["qty"] > 0
             k = abs(int(l["qty"]))
+            oc = option_costs("BUY" if buy else "SELL", k, l["premium"])
+            l = {**l, "premium": oc["prime"]}
+            if oc["frais"]:
+                LG.add(port, "frais", oc["frais"], date=now, ticker=h["sous_jacent"],
+                       detail=f"commission couverture {h['strategie']}")
             tot = l["premium"] * k * MULT
             book_option(port, {
                 "date": now, "ticker": h["sous_jacent"], "type": "put", "action": "BUY" if buy else "SELL",
@@ -305,7 +312,12 @@ def execute_hedge(port: dict, h: dict, tag: str = "Hedge Fund Agent") -> str:
         return float(bs_price(spot, float(o["strike"]), T, RATE, sigma, "put"))
 
     def _leg(o, qty_abs, action):
-        p = _px(o)
+        from utils.costs import option_costs    # v5.8 : écart sur la prime + commission par contrat
+        from utils import ledger as LG
+        oc = option_costs(action, int(qty_abs), _px(o))
+        p = oc["prime"]
+        if oc["frais"]:
+            LG.add(port, "frais", oc["frais"], date=now, ticker=o["ticker"], detail=f"commission couverture {label}")
         return p, {"date": now, "ticker": o["ticker"], "type": "put", "action": action, "strike": o["strike"],
                    "maturity_days": max(int(round(remaining_days(o))), 1), "sigma": round(sigma * 100, 2),
                    "n_contracts": int(qty_abs), "contract_mult": MULT, "premium": round(p, 6),

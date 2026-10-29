@@ -618,36 +618,33 @@ def execute_orders(port: dict, orders: pd.DataFrame, tag: str = "auto-IA") -> li
         from utils.compliance import pre_trade_spot, log_decision
     except Exception as e:  # par prudence, aucun ordre sans contrôle de conformité
         return [f"Contrôle de conformité indisponible ({e}) : aucun ordre exécuté"]
+    import math
+    from utils.costs import affordable_qty
+    from utils.data import apply_trade
     for _, o in orders.iterrows():
         t, q, p = o["ticker"], float(o["qty"]), float(o["price"])
+        # v5.8 : un achat est réduit si les frais (écart, courtage, taxes) ne laissent pas assez de liquidités
+        dec_ = 6 if t.endswith("-USD") else 4
+        if o["action"] == "BUY":
+            q = math.floor(affordable_qty(t, port.get("cash", 0.0), p, q) * 10 ** dec_) / 10 ** dec_
+            if q <= 0:
+                errors.append(f"{t} : cash insuffisant (frais compris)")
+                continue
+        else:
+            q = min(q, h.get(t, {}).get("qty", 0))
+            if q <= 0:
+                continue
         # Contrôles pré-négociation : chaque ordre est vérifié sur l'état courant du portefeuille
-        dec = pre_trade_spot(port, t, o["action"], q if o["action"] == "BUY" else min(q, h.get(t, {}).get("qty", 0) or q), p)
+        dec = pre_trade_spot(port, t, o["action"], q, p)
         if not dec.allowed:
             log_decision(dec, port, t, o["action"], q, p, executed=False, note=tag)
             errors.append(f"{t} bloqué — " + "; ".join(f"[{c.code}] {c.title}" for c in dec.blocks))
             continue
         log_decision(dec, port, t, o["action"], q, p, executed=True, note=tag)
-        tot = q * p
-        if o["action"] == "BUY":
-            if tot > port.get("cash", 0) + 0.01:
-                errors.append(f"{t} : cash insuffisant")
-                continue
-            port["cash"] -= tot
-            if t in h:
-                oq, oa = h[t]["qty"], h[t]["avg_price"]
-                h[t] = {"qty": oq + q, "avg_price": (oq * oa + q * p) / (oq + q)}
-            else:
-                h[t] = {"qty": q, "avg_price": p}
-        else:
-            avail = h.get(t, {}).get("qty", 0)
-            q = min(q, avail)
-            if q <= 0:
-                continue
-            port["cash"] = port.get("cash", 0) + q * p
-            h[t]["qty"] -= q
-            if h[t]["qty"] < 1e-9:
-                del h[t]
-        tr.append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "ticker": t,
-                   "action": o["action"], "qty": round(q, 6), "price": round(p, 6),
-                   "total": round(q * p, 2), "source": tag})
+        entry = apply_trade(port, t, o["action"], q, p)
+        if isinstance(entry, str):
+            errors.append(f"{t} : {entry}")
+            continue
+        entry["source"] = tag
+        tr.append(entry)
     return errors

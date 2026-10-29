@@ -189,9 +189,10 @@ def render():
             "```toml\n[admin]\npassword = \"VotreMotDePasseAdmin\"\n```"
         )
 
-    (tab_users, tab_cmp, tab_dq, tab_teams, tab_game, tab_assets,
+    (tab_users, tab_allp, tab_cmp, tab_dq, tab_teams, tab_game, tab_assets,
      tab_logs, tab_export, tab_danger) = st.tabs([
         "🔐 UTILISATEURS",
+        "📊 TOUS LES PORTEFEUILLES",
         "🛡️ CONFORMITÉ",
         "🩺 QUALITÉ DES DONNÉES",
         "👥 ÉQUIPES & PORTEFEUILLES",
@@ -204,6 +205,9 @@ def render():
 
     with tab_users:
         _users_tab()
+    with tab_allp:
+        from components.admin_portfolios import all_portfolios_tab
+        all_portfolios_tab()
     with tab_cmp:
         _compliance_tab()
     with tab_dq:
@@ -569,6 +573,9 @@ def _teams_tab():
                                 state["teams"][tid]["portfolios"][pid]["holdings"] = {}
                                 state["teams"][tid]["portfolios"][pid]["trades"]   = []
                                 state["teams"][tid]["portfolios"][pid]["history"]  = []
+                                # v5.8 : une réinitialisation ouvre un NOUVEL historique de performance
+                                state["teams"][tid]["portfolios"][pid]["mouvements"] = []
+                                state["teams"][tid]["portfolios"][pid]["revenus_maj"] = {}
                                 persist()
                                 st.success(f"✅ {pid} reset à ${reset_val:,.0f}")
                                 st.rerun()
@@ -888,7 +895,7 @@ def _danger_tab():
                     init_cash = port.get("initial_cash", INITIAL_CASH)
                     state["teams"][tid]["portfolios"][pid].update({
                         "cash": float(init_cash), "holdings": {},
-                        "trades": [], "history": [],
+                        "trades": [], "history": [], "mouvements": [], "revenus_maj": {},
                     })
             persist()
             st.success("✅ Tous les portefeuilles ont été réinitialisés.")

@@ -30,3 +30,12 @@ def port_basic():
     return {"id": "PT", "name": "Test", "strategy": "Libre", "cash": 60_000.0, "initial_cash": 100_000.0,
             "holdings": {"SPY": {"qty": 50, "avg_price": 500.0}, "TLT": {"qty": 100, "avg_price": 90.0}},
             "trades": [], "options": []}
+
+
+@pytest.fixture(autouse=True)
+def _offline_fx():
+    """v5.8 : taux de change fixes pendant les tests (aucun appel réseau)."""
+    from utils import fx
+    fx.set_rates(fx.FALLBACK)
+    yield
+    fx.set_rates(None)
