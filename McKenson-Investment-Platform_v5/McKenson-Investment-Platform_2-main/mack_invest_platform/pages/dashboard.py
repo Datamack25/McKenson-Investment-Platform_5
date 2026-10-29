@@ -186,6 +186,11 @@ def _wizard(state: dict):
                 else:
                     st.session_state["wizard_step"] = 3; st.rerun()
 
+        if st.session_state.get("wiz_back_to_5"):
+            if st.button("🧑‍⚖️ Revenir directement à l'avis du comité (étape 5)", key="wiz_back5_2",
+                         use_container_width=True, type="primary"):
+                st.session_state["wizard_step"] = 5; st.rerun()
+
     elif step == 3:
         strat_id  = st.session_state.get("wiz_strat", "growth")
         sc        = _STRATEGY_CONSTRAINTS.get(strat_id, {})
@@ -233,6 +238,11 @@ def _wizard(state: dict):
                 else:
                     st.session_state["wizard_step"] = 4; st.rerun()
 
+        if st.session_state.get("wiz_back_to_5"):
+            if st.button("🧑‍⚖️ Revenir directement à l'avis du comité (étape 5)", key="wiz_back5_3",
+                         use_container_width=True, type="primary"):
+                st.session_state["wizard_step"] = 5; st.rerun()
+
     elif step == 4:
         from components.committee_ui import render_ips_form, ips_summary
         st.markdown('<div style="font-family:Rajdhani;font-size:1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px;">'
@@ -278,34 +288,149 @@ def _wizard(state: dict):
             f'<b>Stratégie :</b> {strat_obj["emoji"]} {strat_obj["name"]}<br>'
             f'<b>Actifs :</b> {types_str or "—"}'
             f'</div></div>', unsafe_allow_html=True)
+        # ── 1. Avis du comité (BLOQUANT à la création) — recalculé dès qu'un choix change ──
+        from components.committee_ui import render_review, get_context, render_personas
+        from utils import committee as CM
+        from utils.compliance import get_profile
+        import json as _json
+        ips = st.session_state.get("wiz_ips") or CM.default_ips(get_profile().get("risque", "Équilibré"))
+        st.session_state["wiz_ips"] = ips
+        strat_id = st.session_state.get("wiz_strat", "growth")
+        types_sel = list(st.session_state.get("wiz_types", []))
+        sig = _json.dumps([strat_id, sorted(types_sel), ips], sort_keys=True, default=str)
+        if st.session_state.get("wiz_rev_sig") != sig or "wiz_rev" not in st.session_state:
+            st.session_state["wiz_rev"] = CM.review_creation(
+                ips, strat_id, types_sel, get_context(), get_profile().get("options_ok", False),
+                label=st.session_state.get("wiz_name_ok", "Nouveau portefeuille"))
+            st.session_state["wiz_rev_sig"] = sig
+            st.session_state.pop("wiz_fix", None)
+            st.session_state.pop("wiz_fix_refused", None)
+        rev = st.session_state["wiz_rev"]
+        st.markdown('<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#7c3aed;margin-top:14px">'
+                    '🧑‍⚖️ AVIS DU COMITÉ MAM — ANALYSE</div>', unsafe_allow_html=True)
+        render_review(rev)
+        with st.expander("🏛️ Comité de gestion MIP — l'équipe du desk"):
+            render_personas()
+
+        # ── 2. Corrections : boutons vers l'étape à modifier ──
+        _corrections_block(rev)
+
+        # ── 3. Veto : ajustement proposé par le comité, à accepter ou non ──
+        if rev["verdict"] == "veto":
+            _fix_block(ips, strat_id, types_sel)
+
+        # ── 4. Création ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        blocked = rev["verdict"] == "veto"
+        if blocked:
+            st.error("⛔ Le comité oppose son veto : corrigez vos choix avec les boutons ci-dessus, ou acceptez "
+                     "l'ajustement proposé par le comité. Le bouton « Créer le portefeuille » s'activera dès que le "
+                     "comité ne s'oppose plus.")
+        elif rev["verdict"] == "reserve":
+            st.warning("⚠️ Le comité valide avec réserves : vous pouvez créer le portefeuille, ou corriger d'abord "
+                       "les points signalés.")
+        else:
+            st.success("✅ Le comité valide votre portefeuille : vous pouvez le créer.")
         c1, c2 = st.columns(2)
         with c1:
             if st.button("← Retour", key="wiz_b4", use_container_width=True):
                 st.session_state["wizard_step"] = 4; st.rerun()
-        # ── Validation par le comité (BLOQUANTE à la création) ──
-        from components.committee_ui import render_review, get_context, render_personas
-        from utils import committee as CM
-        from utils.compliance import get_profile
-        ips = st.session_state.get("wiz_ips") or CM.default_ips(get_profile().get("risque", "Équilibré"))
-        st.session_state["wiz_ips"] = ips
-        if "wiz_rev" not in st.session_state:
-            st.session_state["wiz_rev"] = CM.review_creation(
-                ips, st.session_state.get("wiz_strat", "growth"), st.session_state.get("wiz_types", []),
-                get_context(), get_profile().get("options_ok", False),
-                label=st.session_state.get("wiz_name_ok", "Nouveau portefeuille"))
-        rev = st.session_state["wiz_rev"]
         with c2:
-            blocked = rev["verdict"] == "veto"
-            if st.button("✅ Créer le portefeuille", key="wiz_create", use_container_width=True, disabled=blocked):
+            if st.button("✅ Créer le portefeuille", key="wiz_create", use_container_width=True, disabled=blocked,
+                         type="primary"):
                 _do_create(state, team_mode, chosen_team_id)
-        st.markdown('<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#7c3aed;margin-top:14px">'
-                    '🧑‍⚖️ AVIS DU COMITÉ MAM</div>', unsafe_allow_html=True)
-        render_review(rev)
-        if rev["verdict"] == "veto":
-            st.error("⛔ Création impossible en l'état : le comité oppose son veto. Modifiez la stratégie (étape 2), "
-                     "les classes d'actifs (étape 3) ou votre politique d'investissement (étape 4).")
-        with st.expander("🏛️ Comité de gestion MIP — l'équipe du desk"):
-            render_personas()
+
+
+_ETAPE_BTN = {2: "🎯 Modifier la stratégie (étape 2)", 3: "📦 Modifier les classes d'actifs (étape 3)",
+              4: "📋 Modifier la politique d'investissement (étape 4)"}
+
+
+def _goto(step: int):
+    st.session_state["wizard_step"] = step
+    st.session_state["wiz_back_to_5"] = True
+    st.session_state.pop("wiz_fix", None)
+    st.rerun()
+
+
+def _corrections_block(rev: dict):
+    """Ce que le comité demande de corriger, regroupé par étape, avec un bouton vers chaque étape."""
+    import html as _h
+    corr = rev.get("corrections") or []
+    if not corr:
+        return
+    st.markdown('<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#ffd700;margin-top:12px">'
+                '🛠️ CE QU\'IL FAUT CORRIGER — ET OÙ</div>', unsafe_allow_html=True)
+    by: dict[int, list] = {}
+    for c in corr:
+        by.setdefault(c["etape"], []).append(c)
+    cols = st.columns(len(by))
+    for col, (etape, items) in zip(cols, sorted(by.items())):
+        with col:
+            veto = any(i["gravite"] == "veto" for i in items)
+            colr = "#ff3b6b" if veto else "#ffd700"
+            st.markdown("".join(
+                f'<div class="cm-reco" style="border-color:{colr}">{i["emoji"]} {_h.escape(i["texte"])}'
+                f'<span style="color:#64748b"> — {_h.escape(i["qui"])}</span></div>' for i in items),
+                unsafe_allow_html=True)
+            if st.button(_ETAPE_BTN[etape], key=f"wiz_goto_{etape}", use_container_width=True,
+                         type="primary" if veto else "secondary"):
+                _goto(etape)
+
+
+def _fix_block(ips: dict, strat_id: str, types_sel: list):
+    """Le comité propose un ajustement de vos choix ; vous l'acceptez ou non."""
+    import html as _h
+    from components.committee_ui import get_context
+    from utils import committee as CM
+    from utils.compliance import get_profile
+    if st.session_state.get("wiz_fix_refused"):
+        if st.button("🧑‍⚖️ Revoir l'ajustement proposé par le comité", key="wiz_fix_again"):
+            st.session_state.pop("wiz_fix_refused", None)
+            st.rerun()
+        return
+    st.markdown('<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#00d4ff;margin-top:12px">'
+                '🧑‍⚖️ AJUSTEMENT PROPOSÉ PAR LE COMITÉ</div>', unsafe_allow_html=True)
+    if "wiz_fix" not in st.session_state:
+        strategies = {k: v.get("recommended", []) for k, v in _STRATEGY_CONSTRAINTS.items()}
+        st.session_state["wiz_fix"] = CM.propose_creation_fix(
+            ips, strat_id, types_sel, get_context(), get_profile().get("options_ok", False), strategies,
+            label=st.session_state.get("wiz_name_ok", "Nouveau portefeuille"))
+    fx = st.session_state["wiz_fix"]
+    if not fx:
+        st.info("Le comité ne trouve pas d'ajustement automatique compatible avec votre politique : utilisez les "
+                "boutons ci-dessus pour modifier vos choix.")
+        return
+
+    def _lab(x: str) -> str:
+        return ", ".join(_ASSET_CONSTRAINTS.get(t.strip(), {}).get("name", t.strip()) for t in x.split(",") if t.strip())
+    rows = []
+    for c in fx["changements"]:
+        av, ap = (c["avant"], c["apres"]) if c["etape"] != 3 else (_lab(c["avant"]), _lab(c["apres"]))
+        rows.append(f'<tr><td style="padding:4px 10px;color:#94a3b8">Étape {c["etape"]} — {CM.CREATION_ETAPES[c["etape"]]}</td>'
+                    f'<td style="padding:4px 10px;color:#ff8c8c">{_h.escape(av)}</td>'
+                    f'<td style="padding:4px 10px;color:#00ff88">→ {_h.escape(ap)}</td>'
+                    f'<td style="padding:4px 10px;color:#cbd5e1">{_h.escape(c["pourquoi"])}</td></tr>')
+    verdict = CM.VERDICT_LABEL[fx["revue"]["verdict"]]
+    st.markdown(
+        '<div style="border:1px solid rgba(0,212,255,.3);background:rgba(0,212,255,.05);border-radius:8px;padding:10px 14px;'
+        'font-family:Share Tech Mono;font-size:.74rem;">'
+        f'<table style="width:100%;border-collapse:collapse">{"".join(rows)}</table>'
+        f'<div style="margin-top:8px;color:#e2e8f0">Avec cet ajustement, le comité rendrait l\'avis : <b>{_h.escape(verdict)}</b>.</div>'
+        '</div>', unsafe_allow_html=True)
+    if fx["touche_politique"]:
+        st.warning("⚠️ Cet ajustement modifie votre politique d'investissement. Ne l'acceptez que s'il correspond à "
+                   "votre situation réelle (horizon, perte que vous pouvez supporter, objectif).")
+    a1, a2 = st.columns(2)
+    if a1.button("✅ Accepter l'ajustement du comité", key="wiz_fix_ok", use_container_width=True, type="primary"):
+        st.session_state["wiz_strat"] = fx["strategie"]
+        st.session_state["wiz_types"] = list(fx["classes"])
+        st.session_state["wiz_ips"] = fx["ips"]
+        st.session_state.pop("wiz_fix", None)
+        st.session_state.pop("wiz_rev_sig", None)          # le comité réexamine la nouvelle version
+        st.rerun()
+    if a2.button("❌ Refuser — je corrige moi-même", key="wiz_fix_no", use_container_width=True):
+        st.session_state["wiz_fix_refused"] = True
+        st.rerun()
 
 
 def _do_create(state: dict, team_mode: str, chosen_team_id):

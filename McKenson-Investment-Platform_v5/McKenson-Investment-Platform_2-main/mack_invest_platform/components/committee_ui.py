@@ -107,7 +107,7 @@ def render_review(rev: dict, show_recos: bool = True):
         c1, c2 = st.columns([1.4, 1])
         with c1:
             st.markdown('<div style="font-family:Rajdhani;font-size:.75rem;letter-spacing:.14em;color:#ff8c00;'
-                        'margin:10px 0 4px">🎙️ SYNTHÈSE DES RECOMMANDATIONS — GASPARD CLAIRVOIX</div>',
+                        'margin:10px 0 4px">🎙️ SYNTHÈSE DES RECOMMANDATIONS — MARC ETING-FINANCIER</div>',
                         unsafe_allow_html=True)
             pc = {"haute": "#ff3b6b", "moyenne": "#ffd700", "basse": "#00d4ff"}
             for r in rev.get("recommandations", []) or [dict(qui="", emoji="✅", action="Aucune action nécessaire.",

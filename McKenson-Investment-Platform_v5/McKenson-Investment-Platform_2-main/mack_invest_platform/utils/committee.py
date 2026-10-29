@@ -708,7 +708,9 @@ STRATEGY_TYPE = {"growth": "Growth", "value": "Value", "momentum": "Momentum", "
 
 def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: dict, options_ok: bool,
                     label: str = "Nouveau portefeuille") -> dict:
-    """Le comité examine la cohérence entre la politique d'investissement et la stratégie choisie."""
+    """Le comité examine la cohérence entre la politique d'investissement et la stratégie choisie.
+    v5.9 : chaque réserve ou veto est rattaché à l'étape de l'assistant où le corriger
+    (2 = stratégie, 3 = classes d'actifs, 4 = politique d'investissement) — rev["corrections"]."""
     cons = constraints(ips)
     pm, prof = cons["perte_max"], cons["profil"]
     vol = STRATEGY_VOL.get(strategy_id, .15)
@@ -721,7 +723,11 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
     sname = STRATEGY_TYPE.get(strategy_id, strategy_id)
     obj = _idx(ips, "objectif", 2)
     hor = _idx(ips, "horizon", 2)
-    avis = []
+    avis, fixes = [], []
+
+    def fix(etape: int, qui: str, texte: str, gravite: str):
+        fixes.append(dict(etape=etape, qui=MEMBER[qui]["nom"], emoji=MEMBER[qui]["emoji"], texte=texte,
+                          gravite=gravite))
 
     eco = _economist(ctx["macro"], None)
     risky_strat = strategy_id in ("growth", "momentum", "crypto", "commodity")
@@ -730,6 +736,8 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
         eco["points"].append(f"Démarrer une stratégie {sname} dans ce régime est risqué : entrer progressivement "
                              "(par tiers sur trois mois).")
         eco["actions"].append("Investir progressivement plutôt qu'en une seule fois.")
+        fix(2, "eco", f"Le régime « {ctx['macro'].regime} » pénalise une stratégie {sname} : choisir une stratégie "
+                      "plus défensive, ou investir progressivement.", "reserve")
     avis.append(eco)
 
     avis.append(_avis("quant", "ok", "Portefeuille vide : rien à mesurer, tout à prouver.",
@@ -743,9 +751,13 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
         cio_vote = "reserve"
         cio_pts.append("Une stratégie offensive sert mal un objectif de préservation ou de revenu.")
         cio_act.append("Préférer Income, Balanced 60/40, Hedging ou ETF Core.")
+        fix(2, "cio", "Choisir une stratégie adaptée à un objectif de préservation ou de revenu (Income, "
+                      "Balanced 60/40, Hedging, ETF Core).", "reserve")
     if obj >= 3 and strategy_id in ("hedging", "arbitrage", "income"):
         cio_vote = "reserve"
         cio_pts.append("Une stratégie très défensive aura du mal à atteindre un objectif de croissance forte.")
+        cio_act.append("Préférer une stratégie de croissance (Growth, ETF Core, Balanced 60/40).")
+        fix(2, "cio", "Choisir une stratégie capable d'atteindre un objectif de croissance forte.", "reserve")
     if strategy_id == "etf":
         cio_pts.append("« Achetez la botte de foin » : une gestion indicielle à bas coût, cohérente pour la plupart des profils.")
     avis.append(_avis("cio", cio_vote, "La stratégie doit servir l'objectif, pas l'inverse." if cio_vote != "ok"
@@ -757,15 +769,28 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
     if v1 > 1.5 * pm:
         cro_vote = "veto"
         cro_act.append("Choisir une stratégie moins volatile ou revoir la perte maximale acceptable.")
+        fix(2, "cro", f"Choisir une stratégie moins volatile : la perte potentielle ({v1:.0%}) dépasse largement "
+                      f"votre limite ({pm:.0%}).", "veto")
+        fix(4, "cro", f"Ou, si c'est votre situation réelle, accepter une perte maximale plus élevée que {pm:.0%}.",
+            "veto")
     elif v1 > pm:
         cro_vote = "reserve"
         cro_act.append("Garder une poche de liquidités ou des couvertures pour rester sous votre limite.")
+        fix(2, "cro", f"La perte potentielle ({v1:.0%}) dépasse un peu votre limite ({pm:.0%}) : une stratégie un "
+                      "peu moins volatile, ou une poche de liquidités et des couvertures.", "reserve")
     if hor == 0 and vol > 0.12:
         cro_vote = "veto"
         cro_pts.append("Horizon de moins de 2 ans : une stratégie volatile n'a pas le temps de se remettre d'une baisse.")
+        cro_act.append("Choisir une stratégie peu volatile (Hedging, Arbitrage, Income) ou allonger l'horizon.")
+        fix(2, "cro", "Horizon de moins de 2 ans : choisir une stratégie peu volatile (Hedging, Arbitrage, Income).",
+            "veto")
+        fix(4, "cro", "Ou allonger l'horizon de placement si l'argent n'est pas nécessaire avant 2 ans.", "veto")
     if obj >= 3 and pm <= 0.10:
         cro_vote = "veto"
         cro_pts.append("Objectif de croissance forte incompatible avec une perte maximale de 10 % ou moins.")
+        cro_act.append("Rendre la politique cohérente : objectif plus modeste ou perte maximale plus élevée.")
+        fix(4, "cro", "Votre politique est contradictoire : un objectif de croissance forte suppose d'accepter plus "
+                      "de 10 % de perte. Choisir un objectif plus modeste ou une perte maximale plus élevée.", "veto")
     avis.append(_avis("cro", cro_vote, {"ok": "Risque attendu compatible avec votre limite.",
                                         "reserve": "Risque attendu un peu au-dessus de votre limite.",
                                         "veto": "Veto : la stratégie dépasse votre tolérance à la perte."}[cro_vote],
@@ -777,19 +802,37 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
     if strategy_id == "crypto" and prof not in THEMATIC_CRYPTO["Crypto Alpha"]:
         c_vote = "veto"
         c_pts.append(f"Stratégie Crypto Alpha réservée aux profils Dynamique et Agressif (votre profil : {prof}).")
+        c_act.append("Choisir une autre stratégie que Crypto Alpha.")
+        fix(2, "cmp", f"Crypto Alpha est réservée aux profils Dynamique et Agressif (votre profil : {prof}) : "
+                      "choisir une autre stratégie.", "veto")
     if ("crypto" in asset_types or strategy_id == "crypto") and "Crypto-actifs" in excl:
         c_vote = "veto"
         c_pts.append("Vous excluez les crypto-actifs, mais la stratégie ou les classes choisies en contiennent.")
+        c_act.append("Retirer la classe Crypto, ou lever l'exclusion des crypto-actifs.")
+        if "crypto" in asset_types:
+            fix(3, "cmp", "Retirer la classe d'actifs « Crypto » : votre politique exclut les crypto-actifs.", "veto")
+        fix(4, "cmp", "Ou lever l'exclusion « Crypto-actifs » de votre politique, si vous acceptez d'en détenir.",
+            "veto")
     if strategy_id == "commodity" and "Énergies fossiles" in excl:
         c_vote = "veto" if c_vote == "veto" else "reserve"
         c_pts.append("Stratégie matières premières alors que les énergies fossiles sont exclues : univers très réduit.")
-    if "PEA" in cons["enveloppe"] and (set(asset_types) & {"crypto", "commodity", "forex", "bond"} or
-                                       strategy_id in ("crypto", "commodity")):
+        c_act.append("Choisir une autre stratégie, ou lever l'exclusion des énergies fossiles.")
+        fix(2, "cmp", "Choisir une autre stratégie que Commodities (énergies fossiles exclues).", "reserve")
+    bad_pea = set(asset_types) & {"crypto", "commodity", "forex", "bond"}
+    if "PEA" in cons["enveloppe"] and (bad_pea or strategy_id in ("crypto", "commodity")):
         c_vote = "veto" if c_vote == "veto" else "reserve"
         c_pts.append("PEA : crypto, matières premières, devises et obligations ne sont pas éligibles.")
+        c_act.append("Retirer les classes non éligibles au PEA, ou choisir une autre enveloppe.")
+        if bad_pea:
+            fix(3, "cmp", "Retirer les classes non éligibles au PEA : " + ", ".join(sorted(bad_pea)) + ".", "reserve")
+        fix(4, "cmp", "Ou choisir une autre enveloppe que le PEA (compte-titres).", "reserve")
     if strategy_id == "hedging" and not options_ok:
         c_vote = "veto" if c_vote == "veto" else "reserve"
         c_pts.append("Stratégie Hedging (options) : le test de connaissances sur les options n'est pas validé.")
+        c_act.append("Passer le test sur les options (Trading Desk → Mon profil investisseur) ou choisir une autre "
+                     "stratégie.")
+        fix(2, "cmp", "Hedging utilise des options : passer le test de connaissances ou choisir une autre stratégie.",
+            "reserve")
     if prof != _requested_profile(ips) and cons["plafonne_par"]:
         c_pts.append("Profil plafonné par : " + " ; ".join(cons["plafonne_par"]) + ".")
     if not c_pts:
@@ -802,7 +845,110 @@ def review_creation(ips: dict, strategy_id: str, asset_types: list[str], ctx: di
     avis.append(cpm)
     return dict(date=datetime.now().strftime("%Y-%m-%d %H:%M"), version=COMMITTEE_VERSION, label=label,
                 verdict=verdict, verdict_label=VERDICT_LABEL[verdict], avis=avis, recommandations=recos,
-                decisions=decisions, contraintes=cons, regime=ctx["macro"].regime, mode="création")
+                decisions=decisions, contraintes=cons, regime=ctx["macro"].regime, mode="création",
+                corrections=fixes)
+
+
+CREATION_ETAPES = {2: "la stratégie", 3: "les classes d'actifs", 4: "la politique d'investissement"}
+
+
+def propose_creation_fix(ips: dict, strategy_id: str, asset_types: list[str], ctx: dict, options_ok: bool,
+                         strategies: dict[str, list[str]], label: str = "Nouveau portefeuille") -> dict | None:
+    """Ajustement minimal des choix de l'utilisateur proposé par le comité pour lever un veto.
+
+    Bonne pratique (adéquation MiFID II) : on adapte d'abord le PORTEFEUILLE au client — classes d'actifs,
+    puis stratégie la plus proche de celle choisie — sans toucher à sa politique d'investissement. Ce n'est
+    qu'en dernier recours (politique contradictoire, ou aucune stratégie compatible) que le comité propose
+    une modification de la politique, clairement signalée, à n'accepter que si elle reflète la situation réelle.
+    strategies : {id: classes recommandées} (assistant de création). Renvoie None si aucun ajustement ne
+    permet de lever le veto."""
+    rank = {"ok": 0, "reserve": 1, "veto": 2}
+    cons = constraints(ips)
+    excl = cons["exclusions"]
+
+    def clean_types(sid: str, types: list[str]) -> list[str]:
+        t = [x for x in types if not ("Crypto-actifs" in excl and x == "crypto")]
+        if "PEA" in cons["enveloppe"]:
+            t = [x for x in t if x not in ("crypto", "commodity", "forex", "bond")]
+        if not t:
+            t = [x for x in strategies.get(sid, ["equity", "etf"]) if x in ("equity", "etf", "mixed")] or ["etf"]
+        return t
+
+    def vol_of(sid: str) -> float:
+        return STRATEGY_VOL.get(sid, .15)
+
+    cands = []
+    v0 = vol_of(strategy_id)
+    for sid in [strategy_id] + sorted((s for s in strategies if s != strategy_id), key=lambda s: abs(vol_of(s) - v0)):
+        types = clean_types(sid, asset_types if sid == strategy_id else
+                            [x for x in asset_types if x in strategies.get(sid, [])] or strategies.get(sid, ["etf"]))
+        rev = review_creation(ips, sid, types, ctx, options_ok, label)
+        if rev["verdict"] != "veto":
+            cands.append((rank[rev["verdict"]], sid != strategy_id, abs(vol_of(sid) - v0), sid, types, rev))
+    if cands:
+        _, _, _, sid, types, rev = min(cands, key=lambda c: (c[1], c[0], c[2]))
+        # préfère « même stratégie » si elle passe ; sinon la plus proche sans veto, validée de préférence
+        changes = []
+        if sid != strategy_id:
+            changes.append(dict(etape=2, avant=STRATEGY_TYPE.get(strategy_id, strategy_id),
+                                apres=STRATEGY_TYPE.get(sid, sid),
+                                pourquoi=f"stratégie la plus proche de votre choix compatible avec votre politique "
+                                         f"(volatilité typique {vol_of(sid):.0%} contre {v0:.0%})"))
+        removed = [x for x in asset_types if x not in types]
+        added = [x for x in types if x not in asset_types]
+        if removed or added:
+            changes.append(dict(etape=3, avant=", ".join(asset_types) or "—", apres=", ".join(types),
+                                pourquoi=("classes retirées : " + ", ".join(removed) if removed else "")
+                                + (" ; " if removed and added else "")
+                                + ("classes ajoutées : " + ", ".join(added) if added else "")))
+        return dict(strategie=sid, classes=types, ips=ips, revue=rev, changements=changes, touche_politique=False)
+
+    # Dernier recours : rendre la politique cohérente (vers la prudence quand elle est contradictoire)
+    new = dict(ips)
+    notes = []
+    obj = _idx(ips, "objectif", 2)
+    if obj >= 3 and float(ips.get("perte_max", .15)) <= 0.10:
+        new["objectif"] = IPS_OPTIONS["objectif"][2]
+        notes.append(f"objectif « {ips.get('objectif')} » → « {new['objectif']} » (cohérent avec une perte maximale "
+                     f"de {float(ips.get('perte_max')):.0%})")
+    if "Crypto-actifs" in excl and strategy_id == "crypto":
+        pass                                                   # une stratégie crypto ne se « corrige » pas ici
+    for sid in [strategy_id] + sorted((s for s in strategies if s != strategy_id), key=lambda s: abs(vol_of(s) - v0)):
+        types = clean_types(sid, asset_types if sid == strategy_id else strategies.get(sid, ["etf"]))
+        rev = review_creation(new, sid, types, ctx, options_ok, label)
+        if rev["verdict"] != "veto":
+            changes = [dict(etape=4, avant=n.split(" → ")[0], apres=n.split(" → ")[1].split(" (")[0],
+                            pourquoi=n.split(" (")[-1].rstrip(")")) for n in notes]
+            if sid != strategy_id:
+                changes.append(dict(etape=2, avant=STRATEGY_TYPE.get(strategy_id, strategy_id),
+                                    apres=STRATEGY_TYPE.get(sid, sid), pourquoi="stratégie compatible la plus proche"))
+            if types != asset_types:
+                changes.append(dict(etape=3, avant=", ".join(asset_types) or "—", apres=", ".join(types),
+                                    pourquoi="classes compatibles avec la stratégie et la politique"))
+            return dict(strategie=sid, classes=types, ips=new, revue=rev, changements=changes,
+                        touche_politique=bool(notes))
+    # Aucune stratégie n'entre dans la perte maximale acceptable : plus petite hausse de cette limite
+    pm0 = float(new.get("perte_max", .15))
+    for pm in [x for x in IPS_OPTIONS["perte_max"] if x > pm0 + 1e-9]:
+        trial = {**new, "perte_max": pm}
+        for sid in sorted(strategies, key=lambda s_: (vol_of(s_), abs(vol_of(s_) - v0))):
+            types = clean_types(sid, [x for x in asset_types if x in strategies.get(sid, [])] or strategies.get(sid, ["etf"]))
+            rev = review_creation(trial, sid, types, ctx, options_ok, label)
+            if rev["verdict"] != "veto":
+                changes = [dict(etape=4, avant=f"perte maximale {pm0:.0%}", apres=f"perte maximale {pm:.0%}",
+                                pourquoi="aucune stratégie ne peut viser moins de perte que cela ; à accepter seulement "
+                                         "si vous supportez réellement cette perte")]
+                changes += [dict(etape=4, avant=n.split(" → ")[0], apres=n.split(" → ")[1].split(" (")[0],
+                                 pourquoi=n.split(" (")[-1].rstrip(")")) for n in notes]
+                if sid != strategy_id:
+                    changes.append(dict(etape=2, avant=STRATEGY_TYPE.get(strategy_id, strategy_id),
+                                        apres=STRATEGY_TYPE.get(sid, sid), pourquoi="la stratégie la moins volatile"))
+                if types != asset_types:
+                    changes.append(dict(etape=3, avant=", ".join(asset_types) or "—", apres=", ".join(types),
+                                        pourquoi="classes compatibles avec la stratégie"))
+                return dict(strategie=sid, classes=types, ips=trial, revue=rev, changements=changes,
+                            touche_politique=True)
+    return None
 
 
 def _requested_profile(ips: dict) -> str:

@@ -1,13 +1,17 @@
-📈 McKenson Investment Platform - MIP — version 5.8.0
+📈 McKenson Investment Platform - MIP — version 5.9.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.8.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.9.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.9 — Avis du comité à la création : analyser, corriger, ajuster
+
+À l'étape 5 de l'assistant, le comité rend son avis et son analyse complète AVANT le bouton de création. Chaque réserve ou veto indique où le corriger, avec un bouton qui ramène directement à l'étape concernée (🎯 stratégie, 📦 classes d'actifs, 📋 politique d'investissement) puis un bouton pour revenir directement à l'avis du comité. En cas de veto, le comité propose un ajustement minimal de vos choix (d'abord les classes d'actifs et la stratégie la plus proche, sans toucher à votre politique ; la politique n'est modifiée qu'en dernier recours, avec un avertissement) : vous l'acceptez ou le refusez. Le bouton « Créer le portefeuille » s'active dès que le comité ne s'oppose plus. L'avis est recalculé automatiquement dès qu'un choix change.
 
 Nouveautés v5.8 — Réalisme des marchés et performance selon GIPS
 
@@ -359,4 +363,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.8.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.9.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
