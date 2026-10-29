@@ -459,7 +459,7 @@ def _cro(risk: dict, cons: dict, options: list, hedges_n: int = 0) -> dict:
 
 
 def _compliance(values: dict, cash: float, cons: dict, options: list, options_ok: bool,
-                data_sim: bool, port_type: str = "Libre") -> dict:
+                data_sim: bool, port_type: str = "Libre", port: dict | None = None) -> dict:
     from utils.compliance import HARD_LIMITS, THEMATIC_CRYPTO
     pts, actions, vote = [], [], "ok"
     nav = cash + sum(v for v in values.values() if v > 0)
@@ -480,6 +480,21 @@ def _compliance(values: dict, cash: float, cons: dict, options: list, options_ok
             actions.append(f"Ramener les crypto-actifs sous {cap:.0%}.")
         over = [(t, v / nav) for t, v in values.items() if v / nav > (0.70 if _broad(t) else lim["line"]) + 1e-9
                 and t.upper() not in ("BIL", "SGOV", "XEON.DE")]
+        if over and port:  # dérogations temporaires justifiées (règle D01)
+            from utils.compliance import active_derogation
+            covered = [(t, w, d) for t, w in over if (d := active_derogation(port, t)) and w <= d["poids_max"] + 1e-9]
+            if covered:
+                pts.append("Dérogation(s) de concentration en cours : " + ", ".join(
+                    f"{t} {w:.0%} (autorisé jusqu'à {d['poids_max']:.0%} jusqu'au {str(d['echeance'])[:10]} — "
+                    f"« {d['justification'][:80]} »)" for t, w, d in covered) + ".")
+                actions.append("Ramener sous le plafond, à l'échéance de la dérogation : "
+                               + ", ".join(t for t, _, _ in covered) + ".")
+                over = [(t, w) for t, w in over if t not in {c[0] for c in covered}]
+            late = [d for d in (port.get("derogations") or {}).values()
+                    if d.get("statut") == "active" and not active_derogation(port, d["ticker"])
+                    and d["ticker"] in dict(over)]
+            if late:
+                pts.append("Dérogation échue non régularisée : " + ", ".join(d["ticker"] for d in late) + ".")
         if over:
             vote = "veto" if vote == "veto" else "reserve"
             pts.append("Concentration au-delà du plafond par ligne : "
@@ -536,8 +551,35 @@ def behavioral_biases(values: dict, cash: float, ips: dict | None = None) -> lis
     return out
 
 
+def discipline_points(port: dict | None) -> tuple[list[str], list[str]]:
+    """Discipline de gestion : fiches de risques par ligne, thèses des ordres manuels, dérogations."""
+    if not port:
+        return [], []
+    pts, acts = [], []
+    try:
+        from utils.line_risk import sheets_status, manual_orders_without_thesis
+        st_ = sheets_status(port)
+        if st_["lignes"]:
+            ok = len(st_["lignes"]) - len(st_["manquantes"])
+            pts.append(f"Fiches de risques : {ok} ligne(s) sur {len(st_['lignes'])} documentée(s) "
+                       "(risques propres à chaque entreprise et façon dont elle les couvre).")
+            if st_["manquantes"]:
+                acts.append("Remplir la fiche de risques de : " + ", ".join(st_["manquantes"][:6]) + ".")
+            if st_["alertes"]:
+                pts.append("Risque élevé non couvert signalé sur : " + ", ".join(st_["alertes"][:6]) + ".")
+                acts.append("Réexaminer les lignes dont un risque élevé n'est pas couvert : "
+                            + ", ".join(st_["alertes"][:6]) + ".")
+        n = manual_orders_without_thesis(port)
+        if n:
+            pts.append(f"{n} ordre(s) manuel(s) passé(s) sans thèse écrite (antérieurs à la règle) : la raison "
+                       "de ces décisions ne pourra pas être montrée.")
+    except Exception:
+        pass
+    return pts, acts
+
+
 def _cpm(avis: list[dict], cons: dict, label: str, perf: dict | None, hedges: list | None,
-         biases: list[str] | None = None) -> tuple[dict, str, list, list]:
+         biases: list[str] | None = None, discipline: tuple[list, list] | None = None) -> tuple[dict, str, list, list]:
     verdict = "veto" if any(a["vote"] == "veto" for a in avis) else (
         "reserve" if any(a["vote"] == "reserve" for a in avis) else "ok")
     order = {"cmp": 0, "cro": 1, "cio": 2, "quant": 3, "eco": 4}
@@ -576,6 +618,10 @@ def _cpm(avis: list[dict], cons: dict, label: str, perf: dict | None, hedges: li
                           action="Prendre conscience des biais repérés avant toute décision : "
                                  + " ; ".join(b.split(" : ")[0] for b in biases) + ".",
                           priorite="basse"))
+    if discipline:
+        pts.extend(discipline[0])
+        for a_ in discipline[1]:
+            recos.append(dict(qui=MEMBER["cpm"]["nom"], emoji=MEMBER["cpm"]["emoji"], action=a_, priorite="basse"))
     pts.append(f"Rappel de votre politique : profil {cons['profil']}, perte maximale acceptable {cons['perte_max']:.0%}, "
                f"enveloppe {cons['enveloppe']}.")
     titre = {"ok": f"« {label} » : feu vert du comité.", "reserve": f"« {label} » : oui, mais avec quelques ajustements.",
@@ -589,8 +635,10 @@ def _cpm(avis: list[dict], cons: dict, label: str, perf: dict | None, hedges: li
 # ══════════════════════════════════════════════════════════════════════════════
 def review_portfolio(values: dict[str, float], cash: float, ips: dict, ctx: dict, *, options: list | None = None,
                      options_ok: bool = False, port_type: str = "Libre", label: str = "Portefeuille",
-                     R: pd.DataFrame | None = None, perf: dict | None = None, hedges: list | None = None) -> dict:
-    """Avis des 6 membres sur un portefeuille (valeurs $ par ligne + liquidités)."""
+                     R: pd.DataFrame | None = None, perf: dict | None = None, hedges: list | None = None,
+                     port: dict | None = None) -> dict:
+    """Avis des 6 membres sur un portefeuille (valeurs $ par ligne + liquidités).
+    port (facultatif) : le portefeuille lui-même, pour les dérogations, fiches de risques et thèses."""
     values = {t: float(v) for t, v in values.items() if v and float(v) > 0}
     cons = constraints(ips)
     nav = cash + sum(values.values())
@@ -612,14 +660,36 @@ def review_portfolio(values: dict[str, float], cash: float, ips: dict, ctx: dict
         _quant(sig, ev, lines_w),
         _cio(cls_w, target, lines_w, cons, cash / nav if nav else 1.0),
         _cro(risk, cons, options or [], len([h for h in (hedges or []) if h.get("contrats", 0) > 0])),
-        _compliance(values, cash, cons, options or [], options_ok, ctx.get("data_sim", False), port_type),
+        _compliance(values, cash, cons, options or [], options_ok, ctx.get("data_sim", False), port_type, port),
     ]
-    cpm, verdict, recos, decisions = _cpm(avis, cons, label, perf, hedges, behavioral_biases(values, cash, ips))
+    themes = _theme_review(avis[2], values, nav, port_type)
+    cpm, verdict, recos, decisions = _cpm(avis, cons, label, perf, hedges, behavioral_biases(values, cash, ips),
+                                          discipline_points(port))
     avis.append(cpm)
     return dict(date=datetime.now().strftime("%Y-%m-%d %H:%M"), version=COMMITTEE_VERSION, label=label,
                 verdict=verdict, verdict_label=VERDICT_LABEL[verdict], avis=avis, recommandations=recos,
                 decisions=decisions, contraintes=cons, risque=risk, signaux=sig, preuve=ev,
-                classes=cls_w, cible=target, regime=ctx["macro"].regime, nav=nav)
+                classes=cls_w, cible=target, regime=ctx["macro"].regime, nav=nav, themes=themes)
+
+
+def _theme_review(cio: dict, values: dict, nav: float, port_type: str = "Libre") -> list[dict]:
+    """Thierry BALANCEMENT lit les chaînes de valeur : des lignes de secteurs différents peuvent
+    dépendre du même moteur (et donc du même risque)."""
+    try:
+        from utils.themes import theme_exposure
+        th = theme_exposure(values, nav)
+    except Exception:
+        return []
+    for t in th[:2]:
+        if t["poids"] < 0.10:
+            continue
+        cio["points"].append(t["texte"])
+        if t["alerte"]:
+            cio["actions"].append(f"Diversifier au-delà du thème « {t['theme']} » ou couvrir son risque commun.")
+            if t["poids"] > t["seuil"] + 0.15 and cio["vote"] == "ok":
+                cio["vote"] = "reserve"
+                cio["titre"] = "Diversifié en apparence, concentré sur un seul moteur de performance."
+    return th
 
 
 def _overrides(cons: dict) -> dict:
@@ -901,3 +971,69 @@ def committee_optimize(values: dict[str, float], cash: float, ips: dict, ctx: di
                 cible_lignes=pd.Series(tw, dtype=float).sort_values(ascending=False),
                 actuel_lignes=pd.Series(cur_w, dtype=float), ordres=od, projete=projected,
                 cash_apres=cash_after, notes=notes, signaux=sig, preuve=ev, contraintes=cons, nav=nav)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PROPOSITIONS D'AMÉLIORATION APRÈS CRÉATION (v5.6) — à valider par l'utilisateur
+# ══════════════════════════════════════════════════════════════════════════════
+def improvement_proposals(opt: dict, values: dict[str, float], cash: float) -> list[dict]:
+    """Traduit le plan d'ajustement du comité (committee_optimize) en propositions lisibles :
+    pour chaque ordre, ce qu'il faut faire, combien, qui le propose et POURQUOI, en mots simples."""
+    od = opt.get("ordres")
+    if od is None or od.empty:
+        return []
+    cons = opt["contraintes"]
+    cur_cls, _ = A.portfolio_to_classes({**{t: v for t, v in values.items() if v > 0}, "CASH": cash})
+    tgt = opt["cible_classes"]
+    sig = opt.get("signaux")
+    proxies = set(A.CLASS_PROXY.values()) | set(UCITS_PROXY.values()) | set(PEA_PROXY.values())
+    out = []
+    for _, o in od.iterrows():
+        t = o["ticker"]
+        cls = A.classify_ticker(t) or "Actions US"
+        cw, tw = float(cur_cls.get(cls, 0.0)), float(tgt.get(cls, 0.0))
+        motif = str(o.get("motif", ""))
+        score = None
+        if isinstance(sig, pd.DataFrame) and t in sig.index and np.isfinite(sig.loc[t, "score"]):
+            score = float(sig.loc[t, "score"])
+        if motif.startswith("exclusion"):
+            qui, why = "cmp", (f"{t} ne respecte pas votre politique d'investissement (exclusion ou enveloppe "
+                               f"{cons['enveloppe']}) : Constance Probité demande de le vendre.")
+        elif motif == "nouvelle ligne":
+            qui = "cio"
+            why = (f"La classe « {cls} » représente {cw:.0%} du portefeuille alors que la cible du comité pour un "
+                   f"profil {cons['profil']} est de {tw:.0%}. ")
+            if t in proxies:
+                try:
+                    from utils.sectors import sector_of
+                    is_fund = sector_of(t).startswith(("ETF", "ETC"))
+                except Exception:
+                    is_fund = False
+                why += (f"{t} est un ETF large et peu coûteux qui couvre toute cette classe d'un coup." if is_fund
+                        else f"{t} est l'actif de référence de cette classe.")
+            else:
+                why += f"{t} est la ligne retenue pour combler cet écart."
+        elif motif == "renforcement":
+            qui = "quant" if score is not None and score > 0.6 else "cio"
+            why = f"« {cls} » est sous sa cible ({cw:.0%} contre {tw:.0%}) : le comité renforce {t}"
+            why += (f", dont le signal de tendance est favorable ({score:+.1f})." if score is not None and score > 0.6
+                    else ", une ligne que vous détenez déjà.")
+        elif motif == "sortie":
+            qui = "cio"
+            why = (f"{t} ne fait plus partie de l'allocation cible : « {cls} » est à {cw:.0%} pour une cible de "
+                   f"{tw:.0%}.")
+        else:  # allègement
+            qui = "quant" if score is not None and score < -0.6 else "cio"
+            why = f"Alléger {t} : "
+            if score is not None and score < -0.6:
+                why += f"son signal de tendance est défavorable ({score:+.1f}), "
+            why += (f"« {cls} » pèse {cw:.0%} pour une cible de {tw:.0%}." if tw < cw - 0.01 else
+                    "la ligne est trop lourde par rapport au reste de sa classe ou au plafond par ligne.")
+        m = MEMBER[qui]
+        out.append(dict(ticker=t, action=o["action"], qty=float(o["qty"]), price=float(o["price"]),
+                        montant=float(o["montant"]), classe=cls, motif=motif, qui=m["nom"], emoji=m["emoji"],
+                        pourquoi=why,
+                        texte=f"{'Acheter' if o['action'] == 'BUY' else 'Vendre'} environ "
+                              f"{float(o['montant']):,.0f} $ de {t}".replace(",", " ")))
+    # Ventes d'abord (elles financent les achats), puis par montant décroissant
+    return sorted(out, key=lambda d: (d["action"] != "SELL", -d["montant"]))

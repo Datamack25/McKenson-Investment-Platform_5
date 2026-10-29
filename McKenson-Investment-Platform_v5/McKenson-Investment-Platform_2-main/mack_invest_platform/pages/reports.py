@@ -14,6 +14,21 @@ def _history(tickers: tuple):
     return fetch_prices(tickers, "1y")
 
 
+def _simple_box(simple: dict | None):
+    """Encadré « En bref » : la performance et sa cause, en mots simples."""
+    if not simple or not simple.get("phrases"):
+        return
+    import html as _h
+    import re
+    items = "".join("<li style='margin:3px 0'>" + re.sub(r"\*\*(.+?)\*\*", r"<b style='color:#e2e8f0'>\1</b>",
+                                                          _h.escape(p)) + "</li>" for p in simple["phrases"])
+    st.markdown('<div style="border-left:3px solid #00ff88;background:rgba(0,255,136,.05);border-radius:6px;'
+                'padding:10px 16px;margin:8px 0;font-family:Share Tech Mono;font-size:.76rem;color:#cbd5e1;'
+                'line-height:1.6"><div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.12em;color:#00ff88">'
+                f'🗣️ EN BREF — VOTRE PORTEFEUILLE EN MOTS SIMPLES</div><ul style="margin:6px 0 0;padding-left:18px">'
+                f'{items}</ul></div>', unsafe_allow_html=True)
+
+
 def render():
     from utils import reporting as R
     from utils.data import get_multi_prices
@@ -39,6 +54,8 @@ def render():
     holdings = tuple(sorted((port.get("holdings") or {}).keys()))
 
     _committee_report(pid, port)
+    st.markdown("<br>", unsafe_allow_html=True)
+    _investor_report(pid, port)
     st.markdown("<br>", unsafe_allow_html=True)
     section_title("RAPPORT DE PERFORMANCE DÉTAILLÉ", "📊")
 
@@ -69,6 +86,7 @@ def render():
                    "derniers ordres.")
         return
     ctx = out["ctx"]
+    _simple_box(ctx.get("simple"))
     if out["src"] == "simulé":
         st.warning("⚠️ Historiques Yahoo Finance indisponibles : les courbes de performance utilisent des données simulées.")
     m = ctx.get("metrics", {})
@@ -90,7 +108,7 @@ def render():
             st.download_button("⬇️ Toutes les images (.zip)", R.zip_images(out["imgs"]),
                                file_name=f"MAM_images_{port.get('name', 'portefeuille').replace(' ', '_')}.zip",
                                mime="application/zip", use_container_width=True, key="rep_dl_zip")
-    if not out["imgs"]:
+    if ctx["pos"].empty:
         st.info("Portefeuille sans position : le PDF ne contient que le récapitulatif.")
         return
     section_title("APERÇU DES IMAGES", "🖼️")
@@ -141,6 +159,7 @@ def _committee_report(pid: str, port: dict):
                        use_container_width=True, key="crep_pdf")
     d2.download_button("⬇️ Rapport hebdomadaire (PNG)", out["png"], f"{fname}.png", "image/png",
                        use_container_width=True, key="crep_png")
+    _simple_box(out["review"].get("synthese_simple"))
     render_review(out["review"])
     with st.expander("🖼️ Aperçu du rapport hebdomadaire (PNG)"):
         st.image(out["png"], use_container_width=True)
@@ -172,3 +191,61 @@ def _committee_report(pid: str, port: dict):
                        "rapport (PNG + PDF).") if ok else st.error("Enregistrement impossible : base injoignable.")
     if cur:
         st.caption(f"Suivi actif vers {cur.get('email')} — rapport du lundi : {'oui' if cur.get('weekly') else 'non'}.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  RAPPORT MENSUEL INVESTISSEUR (v5.6)
+# ══════════════════════════════════════════════════════════════════════════════
+def _investor_report(pid: str, port: dict):
+    from components.committee_ui import get_context, portfolio_values
+    from utils import alerts as AL
+    from utils import committee as CM
+    from utils import investor_report as IR
+    from utils.compliance import get_profile, normalize_port_type
+    from utils.performance import BENCHMARKS
+
+    section_title("RAPPORT MENSUEL POUR L'INVESTISSEUR", "📬")
+    st.caption("Le rapport à envoyer chaque mois à l'investisseur, écrit pour quelqu'un qui n'est pas spécialiste : "
+               "en bref (mieux ou moins bien que le marché, et pourquoi), décisions du mois avec leur raison et leurs "
+               "dangers, ce qui a marché ou non, respect des règles, avis du comité, prochaines étapes, lexique.")
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+    period = c1.selectbox("Période", IR.month_choices(), key="irep_period",
+                          format_func=lambda x: x if x == "Mois en cours" else IR.month_bounds(x)[2].capitalize())
+    bench = c2.selectbox("Indice de référence", list(BENCHMARKS), key="irep_bench")
+    if c3.button("📬 Rédiger le rapport mensuel", key="irep_go", use_container_width=True, type="primary"):
+        with st.spinner("Rédaction du rapport mensuel…"):
+            review = None
+            try:
+                ctx = get_context()
+                vals, cash, _ = portfolio_values(port)
+                ips = port.get("ips") or CM.default_ips(get_profile().get("risque", "Équilibré"))
+                review = CM.review_portfolio(vals, cash, ips, ctx, options=port.get("options", []),
+                                             options_ok=get_profile().get("options_ok", False),
+                                             port_type=normalize_port_type(port), label=port.get("name", ""),
+                                             port=port)
+            except Exception:
+                review = None
+            earn = None
+            try:
+                from utils.earnings import earnings_window, next_earnings
+                earn = earnings_window(next_earnings(list((port.get("holdings") or {}).keys())), 30)
+            except Exception:
+                earn = None
+            out = IR.build(port, period, bench, review=review, earnings=earn)
+        st.session_state["irep_out"] = dict(pid=pid, **out)
+    out = st.session_state.get("irep_out")
+    if not out or out["pid"] != pid:
+        return
+    _simple_box(out["simple"])
+    fname = f"MAM_rapport_mensuel_{port.get('name', 'portefeuille').replace(' ', '_')}_{out['debut']:%Y%m}"
+    d1, d2, d3 = st.columns([1, 1.4, 0.8])
+    d1.download_button("⬇️ Rapport mensuel (PDF)", out["pdf"], f"{fname}.pdf", "application/pdf",
+                       use_container_width=True, key="irep_pdf")
+    default_mail = (st.session_state.get("mam_user") or {}).get("email") or ""
+    to = d2.text_input("Envoyer à", value=default_mail, key="irep_to", label_visibility="collapsed",
+                       placeholder="adresse e-mail de l'investisseur")
+    if d3.button("📧 Envoyer", key="irep_send", use_container_width=True) and to:
+        err = AL.send_email(to, f"Rapport mensuel MAM — {port.get('name')} — {out['periode']}", out["html"],
+                            [(f"{fname}.pdf", out["pdf"], "application/pdf")])
+        st.success("Rapport envoyé.") if not err else st.error(f"Envoi impossible : {err}")
+    st.caption(f"{len(out['journal'])} décision(s) sur la période · {len(out['derogations'])} dérogation(s).")

@@ -1,13 +1,33 @@
-📈 McKenson Investment Platform - MIP — version 5.5.0
+📈 McKenson Investment Platform - MIP — version 5.6.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.5.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.6.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.6 — Discipline de gestion, rapports en langage simple, comité après création
+
+🗣️ **En bref, en mots simples** en tête de chaque rapport (rapport du comité PNG/PDF/e-mail du lundi, rapport détaillé, rapport mensuel, Auto-Portefeuille, portefeuille importé, note de gestion) : le portefeuille a-t-il fait mieux ou moins bien que son indice, de combien de points, et quelle ligne ou quelle façon d'investir (décisions manuelles, desk, comité, modèles ETF, options) en est la cause ; poids des liquidités (utils/plain_summary.py).
+
+📬 **Rapport mensuel investisseur** (page Rapports) : en bref, chiffres du mois expliqués, décisions du mois avec leur raison et leurs dangers, ce qui a marché ou non, respect des règles, avis du comité, prochaines étapes, lexique ; PDF et envoi par e-mail (utils/investor_report.py).
+
+🧑‍⚖️ **Profil et comité pour toute création** : assistant, Hedge Fund Agent, administration (profil + politique d'investissement + veto), modèles ETF (avis du comité obligatoire avant d'investir) ; Auto-Portefeuille et Hedge Fund Agent prennent par défaut le profil du portefeuille actif. **Après chaque création, le comité propose des améliorations** expliquées une à une, que l'utilisateur coche, valide, reporte ou refuse (components/committee_followup.py).
+
+📝 **Thèse obligatoire avant chaque ordre manuel** (raison, dangers, ce qui ferait changer d'avis, horizon), horodatée et rattachée à l'ordre ; journal des décisions.
+
+🗂️ **Fiche de risques par ligne** (taux, juridique, dette, change, matières premières, géopolitique, valorisation…, niveau et couverture), pré-remplie selon le secteur (utils/line_risk.py).
+
+🔌 **Paniers thématiques et chaînes de valeur** (infrastructure de l'IA, applications de l'IA, transition énergétique, défense) : exposition par segment et alerte quand des lignes de secteurs différents dépendent du même moteur ; univers « 🔌 Thèmes » dans le Trading Desk ; 8 actifs ajoutés (ETN, VRT, SU.PA, CEG, FCX, NUE, TSM, AMAT) (utils/themes.py).
+
+🧾 **Dérogation encadrée au plafond par ligne** (règle D01) : justification écrite, plafond + 10 points au plus, 7 jours maximum, notification préalable, rappel à l'échéance dans chaque ordre et chaque rapport.
+
+📅 **Calendrier des résultats** des actions détenues (30 jours) et avertissement « période de résultats » avant un ordre (utils/earnings.py).
+
+Trading Desk → Mes positions → 🧭 Discipline de gestion. Supabase : nouvelle colonne `extras` (créée automatiquement au démarrage). Tests : 86 (python -m pytest -q).
 
 Nouveautés v5.5 — Conseil sur un portefeuille importé + accès administrateur
 
@@ -317,4 +337,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.5.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.6.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

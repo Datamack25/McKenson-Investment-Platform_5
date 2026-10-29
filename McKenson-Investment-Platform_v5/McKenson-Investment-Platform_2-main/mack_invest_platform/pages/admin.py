@@ -106,6 +106,37 @@ STRATEGIES = [
 EMOJIS_TEAM = ["🦅", "🐂", "🎯", "🌊", "🔥", "🦁", "🐉", "⚡", "🌙", "💎"]
 EMOJIS_PORT = ["📈", "🛡️", "🚀", "💰", "🎲", "🌐", "💡", "🔮", "⚖️", "🏆"]
 
+# v5.6 : toute création de portefeuille passe par le profil et le comité
+_ADMIN_STRAT_ID = {"Growth": "growth", "Value": "value", "Momentum": "momentum", "Hedging": "hedging",
+                   "Balanced": "balanced", "Income": "income", "Arbitrage": "arbitrage",
+                   "Quantitative": "momentum", "ESG": "etf", "Macro Global": "macro"}
+
+
+def _committee_for_new(name: str, strat: str, profile: str) -> tuple[dict | None, dict | None, str | None]:
+    """Politique d'investissement du profil + avis du comité à la création.
+    Renvoie (ips, avis à stocker, motif de refus si veto)."""
+    try:
+        from components.committee_ui import get_context
+        from utils import committee as CM
+        from utils.compliance import get_profile
+        ips = CM.default_ips(profile)
+        if strat == "ESG":
+            ips.update(esg="ESG strict", exclusions=["Énergies fossiles", "Armement", "Tabac"])
+        rev = CM.review_creation(ips, _ADMIN_STRAT_ID.get(strat, str(strat).lower()), [], get_context(),
+                                 get_profile().get("options_ok", False), label=name)
+        if rev["verdict"] == "veto":
+            vetos = [a["titre"] for a in rev["avis"] if a["vote"] == "veto"]
+            return None, None, " · ".join(vetos)
+        return ips, CM.summary_for_storage(rev), None
+    except Exception as e:  # noqa: BLE001
+        return None, None, f"comité indisponible ({e})"
+
+
+def _attach_committee(port: dict, ips: dict, summary: dict):
+    from components.committee_followup import mark_pending
+    port["ips"], port["committee"] = ips, summary
+    mark_pending(port, "création (administration)")
+
 
 def _data_quality_tab():
     """Contrôle continu des données (v5.4) : dernier contrôle du traitement planifié + contrôle immédiat."""
@@ -443,22 +474,35 @@ def _teams_tab():
             team_cash  = st.number_input("Capital initial ($)", 100_000, 10_000_000,
                                           int(INITIAL_CASH), 100_000)
             n_ports    = st.slider("Nombre de portefeuilles à créer", 1, 10, 3)
+            team_prof  = st.selectbox("Profil de la politique d'investissement", ["Prudent", "Équilibré",
+                                      "Dynamique", "Agressif"], index=1,
+                                      help="Chaque portefeuille reçoit la politique d'investissement de ce profil "
+                                           "et passe devant le comité ; un veto empêche sa création.")
             submitted  = st.form_submit_button("➕ Créer l'équipe", use_container_width=True)
 
         if submitted and team_name:
             tid = "T" + uuid.uuid4().hex[:6].upper()
             if tid not in teams:
-                portfolios = {}
+                portfolios, refused = {}, []
                 for i in range(n_ports):
                     pid  = "P" + uuid.uuid4().hex[:6].upper()  # identifiant unique (évite les collisions entre utilisateurs)
                     strat = STRATEGIES[i % len(STRATEGIES)]
+                    ips, summ, why = _committee_for_new(f"Portfolio {i+1}", strat, team_prof)
+                    if why:
+                        refused.append(f"Portfolio {i+1} ({strat}) : {why}")
+                        continue
                     portfolios[pid] = {
+                        "id": pid,
                         "name": f"Portfolio {i+1}", "emoji": EMOJIS_PORT[i % len(EMOJIS_PORT)],
                         "strategy": strat, "cash": float(team_cash),
                         "initial_cash": float(team_cash),
                         "holdings": {}, "trades": [], "history": [],
                         "created": datetime.now().isoformat(),
                     }
+                    _attach_committee(portfolios[pid], ips, summ)
+                if refused:
+                    st.warning("Le comité a refusé certains portefeuilles (profil incompatible avec la stratégie) :"
+                               "\n\n- " + "\n- ".join(refused))
                 state["teams"][tid] = {
                     "name": team_name, "emoji": team_emoji,
                     "portfolios": portfolios,
@@ -538,18 +582,30 @@ def _teams_tab():
                             p_cash  = st.number_input("Capital ($)", 100_000, 10_000_000,
                                                         int(INITIAL_CASH), key=f"pc_{tid}")
                             p_emoji = st.selectbox("Emoji", EMOJIS_PORT, key=f"pe_{tid}")
+                            p_prof  = st.selectbox("Profil de la politique d'investissement",
+                                                   ["Prudent", "Équilibré", "Dynamique", "Agressif"], index=1,
+                                                   key=f"pp_{tid}")
                             if st.form_submit_button("➕ Ajouter portefeuille"):
                                 new_pid = "P" + uuid.uuid4().hex[:6].upper()
-                                state["teams"][tid]["portfolios"][new_pid] = {
-                                    "name": p_name or f"Portfolio {new_pid}",
-                                    "emoji": p_emoji, "strategy": p_strat,
-                                    "cash": float(p_cash), "initial_cash": float(p_cash),
-                                    "holdings": {}, "trades": [], "history": [],
-                                    "created": datetime.now().isoformat(),
-                                }
-                                persist()
-                                st.success("✅ Portefeuille ajouté !")
-                                st.rerun()
+                                nm = p_name or f"Portfolio {new_pid}"
+                                ips, summ, why = _committee_for_new(nm, p_strat, p_prof)
+                                if why:
+                                    st.error(f"⛔ Le comité refuse ce portefeuille : {why}")
+                                else:
+                                    newp = {
+                                        "id": new_pid,
+                                        "name": nm,
+                                        "emoji": p_emoji, "strategy": p_strat,
+                                        "cash": float(p_cash), "initial_cash": float(p_cash),
+                                        "holdings": {}, "trades": [], "history": [],
+                                        "created": datetime.now().isoformat(),
+                                    }
+                                    _attach_committee(newp, ips, summ)
+                                    state["teams"][tid]["portfolios"][new_pid] = newp
+                                    persist()
+                                    st.success("✅ Portefeuille ajouté ! Le comité propose sa première "
+                                               "constitution dans le Dashboard.")
+                                    st.rerun()
                     else:
                         st.info("Maximum 10 portefeuilles par équipe atteint.")
 

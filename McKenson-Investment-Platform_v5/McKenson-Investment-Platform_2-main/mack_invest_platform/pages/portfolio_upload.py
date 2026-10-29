@@ -116,12 +116,23 @@ def _run(parsed: dict, fname: str, ips: dict, src: str, intensity: float, band: 
     hist = PF.price_history(U.board_tickers(), (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d"))
     w_b = U.class_weights(values, cash)
     w_a = U.class_weights(opt["projete"], opt["cash_apres"])
+    synthese = None
+    try:  # En bref : ce qu'aurait fait la composition actuelle face au marché (v5.6)
+        from utils.plain_summary import plain_summary_from_values
+        lh = PF.price_history(tuple(sorted(set(tickers) | {"SPY"})),
+                              (datetime.now() - timedelta(days=130)).strftime("%Y-%m-%d"))
+        if lh is not None and not lh.empty:
+            synthese = plain_summary_from_values(values, cash, lh[[c for c in lh.columns if c in values]],
+                                                 lh["SPY"] if "SPY" in lh else None, "S&P 500", 63,
+                                                 "sur les 3 derniers mois")
+    except Exception:
+        synthese = None
     return dict(ok=True, fichier=fname, date=datetime.now().strftime("%d/%m/%Y %H:%M"), devise=parsed.get("devise", "USD"),
                 lignes=lines, cash=cash, nav=nav, notes=notes, avant=before, apres=after, opt=opt,
                 classes_avant=w_b, classes_apres=w_a, secteurs=U.sector_board(hist, ctx["macro"]),
                 regions=U.region_board(hist, ctx["macro"]), perf_dispo=bool(hist is not None and not hist.empty),
                 data_sim=bool(ctx.get("data_sim")), source_profil=src,
-                scenarios=U.scenarios(w_b, w_a, None, nav))
+                scenarios=U.scenarios(w_b, w_a, None, nav), synthese=synthese)
 
 
 def _show(res: dict):
@@ -133,6 +144,8 @@ def _show(res: dict):
         st.error("Données de marché simulées (sources indisponibles) : les résultats ne sont pas fiables.")
     for n in res["notes"]:
         st.caption("ℹ️ " + n)
+    from pages.reports import _simple_box
+    _simple_box(res.get("synthese"))
     rb, ra = res["avant"].get("risque") or {}, res["apres"].get("risque") or {}
     k = st.columns(5)
     k[0].metric("Valeur du portefeuille", f"{res['nav']:,.0f} {res['devise']}".replace(",", " "))

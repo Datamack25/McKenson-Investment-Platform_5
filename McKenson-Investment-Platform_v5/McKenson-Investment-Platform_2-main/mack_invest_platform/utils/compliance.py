@@ -145,6 +145,11 @@ RULES = {
             "L'ordre représente une part très importante de l'actif net : vérifiez qu'il ne s'agit pas d'une erreur "
             "de saisie (« fat finger »).",
             "Contrôles pré-négociation — RTS 6 (règlement délégué 2017/589)"),
+    "D01": ("Dérogation à la limite de concentration",
+            "Un dépassement temporaire du plafond par ligne est possible s'il est justifié par écrit, plafonné, "
+            "limité dans le temps (7 jours au plus) et notifié avant l'ordre. À l'échéance, la ligne doit revenir "
+            "sous le plafond : une dérogation expirée est signalée à chaque ordre et dans les rapports.",
+            "Diversification — directive UCITS 2009/65/CE art. 52 · procédure interne de dérogation"),
     "C09": ("Profil investisseur",
             "Sans questionnaire rempli, le profil par défaut « Équilibré » s'applique et les produits dérivés "
             "restent fermés.",
@@ -366,6 +371,116 @@ def _price_source(ticker: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  DÉROGATIONS À LA LIMITE DE CONCENTRATION (v5.6)
+# ══════════════════════════════════════════════════════════════════════════════
+DEROGATION_MAX_DAYS = 7
+DEROGATION_MIN_CHARS = 30
+
+
+def derogation_ceiling(cap: float) -> float:
+    """Poids maximal autorisable par dérogation : plafond + 10 points, et au plus 1,5 fois le plafond."""
+    return round(min(cap + 0.10, cap * 1.5), 4)
+
+
+def line_cap(port: dict, ticker: str, category: str | None = None, profile: dict | None = None) -> tuple[float, str]:
+    """Plafond par ligne applicable (même calcul que le contrôle C04)."""
+    profile = portfolio_profile(port, profile)
+    risk = profile.get("risque", "Équilibré")
+    port_type = normalize_port_type(port)
+    cap = min(HARD_LIMITS.get(risk, HARD_LIMITS["Équilibré"])["line"], PORTFOLIO_TYPES[port_type]["max_w"])
+    label = f"profil {risk}"
+    if _is_broad_etf(ticker):
+        cap, label = max(cap, BROAD_ETF_LINE_CAP), "ETF indiciel diversifié"
+    elif port_type in THEMATIC_CRYPTO and _is_crypto(ticker, category):
+        cap, label = PORTFOLIO_TYPES[port_type]["max_w"], f"mandat {port_type}"
+    return cap, label
+
+
+def _parse_dt(x) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(x))
+    except Exception:
+        return None
+
+
+def active_derogation(port: dict, ticker: str, now: datetime | None = None) -> dict | None:
+    """Dérogation en cours (non close et non échue) pour cette ligne."""
+    d = (port.get("derogations") or {}).get(ticker)
+    if not d or d.get("statut") != "active":
+        return None
+    end = _parse_dt(d.get("echeance"))
+    if end is None or (now or datetime.now()) > end:
+        return None
+    return d
+
+
+def request_derogation(port: dict, ticker: str, poids_max: float, jours: int, justification: str, *,
+                       category: str | None = None, author: str | None = None,
+                       now: datetime | None = None) -> tuple[bool, str]:
+    """Enregistre une dérogation justifiée, plafonnée et datée. Renvoie (accordée, message)."""
+    now = now or datetime.now()
+    cap, label = line_cap(port, ticker, category)
+    ceiling = derogation_ceiling(cap)
+    just = str(justification or "").strip()
+    if len(just) < DEROGATION_MIN_CHARS:
+        return False, (f"Justification trop courte : expliquez en au moins {DEROGATION_MIN_CHARS} caractères "
+                       "pourquoi la position mérite de dépasser le plafond et comment elle sera réduite.")
+    if not 1 <= int(jours) <= DEROGATION_MAX_DAYS:
+        return False, f"Durée invalide : une dérogation dure de 1 à {DEROGATION_MAX_DAYS} jours."
+    if poids_max <= cap + 1e-9:
+        return False, f"Inutile : {poids_max:.0%} reste sous le plafond de {cap:.0%}."
+    if poids_max > ceiling + 1e-9:
+        return False, (f"Refusée : {poids_max:.0%} dépasse le maximum autorisable par dérogation "
+                       f"({ceiling:.0%} pour un plafond de {cap:.0%}).")
+    from datetime import timedelta
+    rec = dict(ticker=ticker, plafond_normal=cap, regle=label, poids_max=float(poids_max), jours=int(jours),
+               justification=just, debut=now.isoformat(timespec="seconds"),
+               echeance=(now + timedelta(days=int(jours))).isoformat(timespec="seconds"),
+               statut="active", notifie=now.isoformat(timespec="seconds"), auteur=author)
+    port.setdefault("derogations", {})[ticker] = rec
+    try:  # notification à l'investisseur AVANT l'ordre (e-mail du compte, si configuré)
+        from utils.notifier import _dispatch
+        _dispatch(port, f"Dérogation de concentration sur {ticker}",
+                  f"MAM — dérogation temporaire sur {ticker} ({port.get('name', '')})",
+                  [f"Ligne {ticker} autorisée jusqu'à {poids_max:.0%} (plafond habituel {cap:.0%}, {label}).",
+                   f"Durée : {jours} jour(s), échéance le {rec['echeance'][:16].replace('T', ' ')}.",
+                   f"Justification : {just}",
+                   "À l'échéance, la ligne devra revenir sous le plafond habituel."])
+    except Exception:
+        pass
+    return True, (f"Dérogation accordée : {ticker} jusqu'à {poids_max:.0%} pendant {jours} jour(s) "
+                  f"(échéance {rec['echeance'][:16].replace('T', ' ')}).")
+
+
+def close_derogation(port: dict, ticker: str, reason: str = "clôturée par l'utilisateur") -> bool:
+    d = (port.get("derogations") or {}).get(ticker)
+    if not d or d.get("statut") != "active":
+        return False
+    d["statut"], d["cloture"] = "close", f"{datetime.now():%Y-%m-%d %H:%M} — {reason}"
+    return True
+
+
+def derogation_status(port: dict, weights: dict[str, float] | None = None, now: datetime | None = None) -> list[dict]:
+    """État de toutes les dérogations : active / échue à régulariser / régularisée / close.
+    weights : poids actuels par ligne (pour savoir si une ligne échue est revenue sous son plafond)."""
+    now = now or datetime.now()
+    out = []
+    for t, d in (port.get("derogations") or {}).items():
+        end = _parse_dt(d.get("echeance"))
+        w = (weights or {}).get(t)
+        if d.get("statut") == "close":
+            etat = "close"
+        elif end and now <= end:
+            etat = "active"
+        elif w is not None and w <= d.get("plafond_normal", 1) + 1e-9:
+            etat = "régularisée"
+        else:
+            etat = "échue — à régulariser"
+        out.append({**d, "etat": etat, "poids_actuel": w})
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  CONTRÔLES — ORDRE SPOT
 # ══════════════════════════════════════════════════════════════════════════════
 def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: float, *,
@@ -431,9 +546,18 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
                 cap, label = max(cap, BROAD_ETF_LINE_CAP), "ETF indiciel diversifié"
             elif port_type in THEMATIC_CRYPTO and _is_crypto(ticker, category):
                 cap, label = PORTFOLIO_TYPES[port_type]["max_w"], f"mandat {port_type}"
-            if w > cap + 1e-9:
+            der = active_derogation(port, ticker) if w > cap + 1e-9 else None
+            if der and w <= der["poids_max"] + 1e-9:
+                d.add("C04", "warn", f"{ticker} pèserait {w:.1%} de l'actif net, au-delà du plafond {cap:.0%} "
+                                      f"({label}) — autorisé par une dérogation temporaire (règle D01) jusqu'à {der['poids_max']:.0%}, "
+                                      f"échéance le {str(der['echeance'])[:16].replace('T', ' ')}.")
+            elif w > cap + 1e-9:
+                extra = (f" La dérogation en cours s'arrête à {der['poids_max']:.0%}." if der else
+                         f" Une dérogation justifiée et temporaire (≤ {DEROGATION_MAX_DAYS} jours, jusqu'à "
+                         f"{derogation_ceiling(cap):.0%}) peut être demandée.")
                 d.add("C04", "block", f"{ticker} pèserait {w:.1%} de l'actif net, plafond {cap:.0%} ({label}). "
-                                       f"Montant maximal : {max(0.0, cap * nav - snap['vals'].get(ticker, 0.0)):,.0f} $.")
+                                       f"Montant maximal : {max(0.0, cap * nav - snap['vals'].get(ticker, 0.0)):,.0f} $."
+                                       + extra)
             else:
                 d.add("C04", "ok", f"{ticker} : {w:.1%} après l'ordre (plafond {cap:.0%}, {label})")
 
@@ -463,6 +587,15 @@ def pre_trade_spot(port: dict, ticker: str, action: str, qty: float, price: floa
                                        f"{max(0.0, cash_like + amount - lim['cash_min'] * nav):,.0f} $.")
             else:
                 d.add("C06", "ok", f"Liquidités après l'ordre : {w:.1%} (minimum {lim['cash_min']:.0%})")
+
+    # D01 — dérogations échues non régularisées (rappel à chaque ordre)
+    if nav > 0 and port.get("derogations"):
+        weights = {t: v / nav for t, v in snap["vals"].items()}
+        late = [x for x in derogation_status(port, weights) if x["etat"].startswith("échue")]
+        if late:
+            d.add("D01", "warn", "Dérogation échue à régulariser : " + ", ".join(
+                f"{x['ticker']} à {x['poids_actuel']:.0%} pour un plafond de {x['plafond_normal']:.0%}"
+                for x in late if x.get("poids_actuel") is not None) + ".")
 
     # C08 — taille inhabituelle
     if nav > 0 and amount / nav > FAT_FINGER_SHARE:

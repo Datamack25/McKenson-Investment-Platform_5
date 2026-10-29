@@ -213,7 +213,8 @@ def run_review(port: dict, ctx: dict | None = None, store: bool = True) -> dict:
         perf = None
     rev = C.review_portfolio(vals, cash, ips, ctx, options=port.get("options", []),
                              options_ok=get_profile().get("options_ok", False),
-                             port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"), perf=perf)
+                             port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"), perf=perf,
+                             port=port)
     if store:
         port["committee"] = C.summary_for_storage(rev)
     return rev
@@ -254,3 +255,20 @@ def committee_panel(port: dict, key: str, expanded: bool = False):
             if rev["verdict"] != "ok":
                 st.caption("Pour appliquer le plan du comité automatiquement : onglet 📈 Optimizer → "
                            "« Optimisation par le comité ».")
+
+
+def active_profile() -> tuple[str, str]:
+    """Profil à appliquer par défaut aux outils d'allocation : celui de la politique d'investissement du
+    portefeuille actif, sinon le profil investisseur de l'utilisateur."""
+    from utils.compliance import get_profile
+    try:
+        from utils.data import get_or_init_state
+        tid, pid = st.session_state.get("active_team"), st.session_state.get("active_portfolio")
+        port = (get_or_init_state().get("teams", {}).get(tid, {}).get("portfolios", {}) or {}).get(pid)
+        if port and port.get("ips"):
+            return C.constraints(port["ips"])["profil"], f"politique d'investissement de « {port.get('name')} »"
+    except Exception:
+        pass
+    prof = get_profile()
+    return prof.get("risque", "Équilibré"), ("votre profil investisseur" if prof.get("defini")
+                                              else "profil par défaut (questionnaire non rempli)")

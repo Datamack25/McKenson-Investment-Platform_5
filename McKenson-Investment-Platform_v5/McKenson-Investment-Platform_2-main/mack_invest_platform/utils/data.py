@@ -333,6 +333,7 @@ def _build_state_from_db(user_id: int) -> dict:
             "history":p.get("history",[]),
             "ips":_json(p.get("ips")),
             "committee":_json(p.get("committee")),
+            **(_json(p.get("extras")) or {}),
         }
 
     return state
@@ -522,7 +523,8 @@ compute_portfolio_metrics = compute_risk_metrics
 
 
 def record_trade(portfolio: dict, ticker: str, action: str,
-                 qty: float, price: float, enforce: bool = True, source: str = "") -> str:
+                 qty: float, price: float, enforce: bool = True, source: str = "",
+                 meta: dict | None = None) -> str:
     """Exécute un ordre spot simulé. Avec enforce=True (par défaut), l'ordre passe
     d'abord par les contrôles de conformité (utils.compliance) : s'il est bloqué,
     rien n'est exécuté et le message explique la règle en cause."""
@@ -561,6 +563,8 @@ def record_trade(portfolio: dict, ticker: str, action: str,
              "qty":round(qty,6),"price":round(price,6),"total":round(total,2)}
     if source:
         entry["source"] = source
+    if meta:  # v5.6 : thèse d'investissement horodatée, dérogation utilisée…
+        entry.update(meta)
     if decision is not None:
         entry["conformite"] = "contrôlé" + (f" ({len(decision.warnings)} alerte(s))" if decision.warnings else "")
         try:

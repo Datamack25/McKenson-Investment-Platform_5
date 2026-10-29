@@ -57,6 +57,38 @@ def auto_images(ctx: dict, theme: str = "light") -> dict[str, bytes]:
     return imgs
 
 
+def _auto_simple_blocks(ctx: dict) -> list[tuple]:
+    """En bref (v5.6) : l'allocation proposée aurait-elle fait mieux ou moins bien que le marché sur le backtest ?"""
+    from utils.plain_summary import pct, pts
+    bt = ctx.get("bt") or {}
+    alloc = ctx["alloc"]
+    ph = []
+    if bt.get("ok") and isinstance(ctx.get("bench"), pd.DataFrame) and len(ctx["bench"].columns):
+        r = bt["returns"].dropna()
+        b = ctx["bench"].iloc[:, 0].reindex(r.index).fillna(0)
+        p_, pb = float((1 + r).prod() - 1), float((1 + b).prod() - 1)
+        gap = p_ - pb
+        word = "mieux" if gap > 0.005 else ("moins bien" if gap < -0.005 else "à peu près comme")
+        ph.append(f"**En une phrase : sur le passé testé, cette allocation aurait fait {word} que le marché "
+                  f"({ctx['bench'].columns[0]}).**")
+        ph.append(f"Du {bt['start']:%m/%Y} au {bt['end']:%m/%Y}, elle aurait {'gagné' if p_ >= 0 else 'perdu'} "
+                  f"{pct(abs(p_))}, contre {pct(abs(pb))} {'de gain' if pb >= 0 else 'de perte'} pour l'indice : "
+                  f"un écart de {pts(gap)}.")
+        dd = ctx.get("metrics", {}).get("Drawdown max")
+        if dd is not None and np.isfinite(dd):
+            ph.append(f"Sa plus forte baisse entre un sommet et un creux aurait été de {pct(abs(dd))} : c'est ce qu'il "
+                      "faut être prêt à traverser.")
+    else:
+        ph.append("**En une phrase : allocation proposée selon votre profil et le contexte de marché, sans backtest "
+                  "sur cette génération.**")
+    top = alloc["weights"][alloc["weights"] > 0].sort_values(ascending=False).head(3)
+    if len(top):
+        ph.append("Ce qui pèse le plus : " + ", ".join(f"{t} ({w:.0%})" for t, w in top.items())
+                  + f". Profil retenu : {alloc['profile']}.")
+    ph.append("Un backtest décrit le passé : il ne garantit pas les résultats futurs.")
+    return [("h", "En bref — en mots simples"), ("p", ph[0]), ("bullets", ph[1:])]
+
+
 def auto_pdf(ctx: dict) -> bytes:
     alloc, sig, cap = ctx["alloc"], ctx["signals"], ctx["capital"]
     imgs = ctx.get("images") or auto_images(ctx, "light")
@@ -70,6 +102,7 @@ def auto_pdf(ctx: dict) -> bytes:
         ("Score macro", f"{ctx.get('macro_score', 0):+.0f}/100"),
         ("Risque géopolitique", f"{ctx.get('news', {}).get('gpr', 0):.0f}/100"),
     ]))
+    blocks += _auto_simple_blocks(ctx)
     blocks.append(("h", "1. Synthèse et justification"))
     blocks.append(("bullets", ctx.get("explanation", [])))
     blocks.append(("note", f"Méthode : {METHODS.get(alloc['method'], alloc['method'])}. "
@@ -183,6 +216,11 @@ def portfolio_context(port: dict, live: dict, hist: pd.DataFrame, signals: pd.Da
     pos = pd.DataFrame(val["positions"])
     nav = val["total"]
     ctx = {"port": port, "val": val, "pos": pos, "nav": nav, "signals": signals}
+    try:  # En bref : performance réelle vs indice et sa cause, en mots simples (v5.6)
+        from utils.plain_summary import plain_summary
+        ctx["simple"] = plain_summary(port, "S&P 500")
+    except Exception:
+        ctx["simple"] = None
     if pos.empty:
         return ctx
     w = pos.set_index("ticker")["market_value"] / nav
@@ -208,6 +246,13 @@ def portfolio_context(port: dict, live: dict, hist: pd.DataFrame, signals: pd.Da
 
 def portfolio_images(ctx: dict, theme="light") -> dict[str, bytes]:
     imgs = {}
+    try:
+        from utils.plain_summary import summary_png
+        png = summary_png(ctx.get("simple"), theme=theme)
+        if png:
+            imgs["00_en_bref"] = png
+    except Exception:
+        pass
     if "weights" not in ctx:
         return imgs
     w = ctx["weights"]
@@ -236,7 +281,9 @@ def portfolio_pdf(ctx: dict) -> bytes:
     port, val, nav = ctx["port"], ctx["val"], ctx["nav"]
     imgs = ctx.get("images") or portfolio_images(ctx)
     init = float(port.get("initial_cash", nav) or nav)
-    blocks = [("kpis", [
+    from utils.plain_summary import pdf_blocks
+    blocks = pdf_blocks(ctx.get("simple"))
+    blocks += [("kpis", [
         ("Valeur totale", f"{nav:,.0f} $"), ("Performance depuis l'origine", _fmt_pct(nav / init - 1, True)),
         ("Liquidités", f"{val['cash']:,.0f} $"), ("Positions", str(len(ctx["pos"]))),
         ("Capital initial", f"{init:,.0f} $"), ("P&L latent", f"{ctx['pos']['unreal_pnl'].sum():+,.0f} $" if len(ctx['pos']) else "—"),

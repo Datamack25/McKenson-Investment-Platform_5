@@ -223,6 +223,19 @@ def _fmt_money(v):
     return f"{v:,.0f}".replace(",", " ")
 
 
+def _port_by_name(name: str) -> dict | None:
+    """Portefeuille MAM portant ce nom (pour la synthèse en mots simples de la note de gestion)."""
+    try:
+        from utils.data import get_or_init_state
+        for t in get_or_init_state().get("teams", {}).values():
+            for p in (t.get("portfolios") or {}).values():
+                if p.get("name") and p.get("name") == name:
+                    return p
+    except Exception:
+        pass
+    return None
+
+
 def render_advice_panel(holdings: dict, profile: str = "Équilibré", key: str = "adv",
                         ctx=None, name: str = "Portefeuille"):
     """Revue complète d'un portefeuille, comme un gérant professionnel.
@@ -273,6 +286,16 @@ def render_advice_panel(holdings: dict, profile: str = "Équilibré", key: str =
 
     with s1:
         note = st.session_state.get(f"{key}_llm_note") or R["note"]
+        port_ = _port_by_name(name)
+        if port_ is not None and not st.session_state.get(f"{key}_llm_note"):
+            try:  # En bref : mieux ou moins bien que le marché, et pourquoi (v5.6)
+                from utils.plain_summary import plain_summary
+                simple = plain_summary(port_, "S&P 500")
+                head, _, rest = note.partition("\n")
+                note = (head + "\n\n## En bref — en mots simples\n\n"
+                        + "\n".join(f"- {x}" for x in simple["phrases"]) + "\n" + rest)
+            except Exception:
+                pass
         st.markdown(note)
         b1, b2, b3 = st.columns(3)
         if A.llm_available() and b1.button("✍️ Reformuler par l'IA", key=f"{key}_llm"):
@@ -736,6 +759,8 @@ def _execute(is_new: bool, new_cfg: dict, port: dict | None, weights: pd.Series,
         teams[tid]["portfolios"][pid] = port
         st.session_state["_select_portfolio"] = (tid, pid)
         mode, pct = "cash", 1.0
+        from components.committee_followup import mark_pending
+        mark_pending(port, "création (Hedge Fund Agent)")
     if ips:
         port["ips"] = ips
     if committee_rev:
@@ -1001,7 +1026,11 @@ def render():
     # ── 2. Allocation du desk ─────────────────────────────────────────────────
     with t2:
         c1, c2, c3 = st.columns([1, 1, 1])
-        profile = c1.selectbox("Profil", list(A.PROFILES), index=1, key="hf_profile")
+        from components.committee_ui import active_profile
+        _ips_prof, _ips_origin = active_profile()
+        _pl = list(A.PROFILES)
+        profile = c1.selectbox("Profil", _pl, index=_pl.index(_ips_prof) if _ips_prof in _pl else 1, key="hf_profile",
+                               help=f"Par défaut : {_ips_prof} ({_ips_origin}).")
         intensity = c2.slider("Intensité tactique", 0.0, 1.0, 0.5, 0.1, key="hf_int",
                               help="0 = allocation stratégique pure ; 1 = inclinaisons macro maximales")
         capital = c3.number_input("Capital (simulation)", 1_000, 100_000_000, 1_000_000, 10_000, key="hf_cap",
@@ -1055,7 +1084,11 @@ def render():
         options = list(found) + ["✏️ Saisie manuelle"]
         c1, c2 = st.columns([2, 1])
         src = c1.selectbox("Portefeuille à analyser", options, key="hf_src")
-        prof2 = c2.selectbox("Profil de risque", list(A.PROFILES), index=1, key="hf_prof2")
+        from components.committee_ui import active_profile
+        _p2, _o2 = active_profile()
+        _pl2 = list(A.PROFILES)
+        prof2 = c2.selectbox("Profil de risque", _pl2, index=_pl2.index(_p2) if _p2 in _pl2 else 1, key="hf_prof2",
+                             help=f"Par défaut : {_p2} ({_o2}).")
         if src == "✏️ Saisie manuelle":
             if not found:
                 st.caption("Aucun portefeuille MAM détecté automatiquement : saisissez vos lignes "

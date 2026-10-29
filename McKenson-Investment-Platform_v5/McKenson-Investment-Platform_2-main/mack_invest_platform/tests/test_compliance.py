@@ -43,4 +43,4 @@ def test_naked_call_always_blocked(port_basic):
 
 
 def test_rules_catalogue_complete():
-    assert len(CP.RULES) == 16 and all(len(v) == 3 for v in CP.RULES.values())
+    assert len(CP.RULES) == 17 and all(len(v) == 3 for v in CP.RULES.values())

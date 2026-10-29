@@ -342,6 +342,9 @@ def _do_create(state: dict, team_mode: str, chosen_team_id):
         "ips": st.session_state.get("wiz_ips"),
         "committee": CM.summary_for_storage(rev) if rev else None,
     }
+    # Après la création, le comité propose une première constitution à valider (Dashboard)
+    from components.committee_followup import mark_pending
+    mark_pending(teams[tid]["portfolios"][pid], "création (assistant)")
     # sélection appliquée par app.py avant la création des sélecteurs (évite l'erreur Streamlit)
     st.session_state["_select_portfolio"] = (tid, pid)
     persist()
@@ -736,6 +739,14 @@ def render():
     if not all_ports:
         _wizard(state)
         return
+
+    # ── Propositions d'amélioration du comité après création (à valider) ─────
+    from components.committee_followup import PENDING, followup_panel
+    for item in all_ports:
+        if (item["port"].get("suivi_comite") or {}).get("statut") in PENDING:
+            st.markdown(f'<div style="font-family:Rajdhani;font-size:.8rem;letter-spacing:.1em;color:#7c3aed;">'
+                        f'{item["port"].get("emoji", "📁")} {item["port"].get("name")}</div>', unsafe_allow_html=True)
+            followup_panel(item["port"], key=f"dash_fu_{item['pid']}", compact=True)
 
     # ── Fetch prix live — avec fallback individuel si batch échoue ────────────
     all_tickers: set[str] = set()

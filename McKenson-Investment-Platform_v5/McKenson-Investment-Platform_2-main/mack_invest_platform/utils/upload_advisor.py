@@ -440,7 +440,10 @@ def summary_rows(res: dict) -> list[tuple[str, str]]:
     ra = res["apres"].get("risque") or {}
     cons = res["avant"]["contraintes"]
     f = lambda x: "—" if x is None or (isinstance(x, float) and not np.isfinite(x)) else f"{x:.1%}"
-    return [
+    from utils.plain_summary import plain_lines
+    simple = [("En bref" if i == 0 else "", t) for i, t in enumerate(
+        x for x in plain_lines(res.get("synthese")) if not x.startswith("Lecture :"))]
+    return simple + [
         ("Fichier analysé", res["fichier"]), ("Date de l'analyse", res["date"]),
         ("Profil retenu", f"{cons['profil']} — {res['source_profil']}"),
         ("Régime économique", res["avant"]["regime"]),
@@ -621,12 +624,28 @@ def build_png(res: dict) -> bytes:
     import textwrap
 
     BG, INK, MUT = "#0b1220", "#e2e8f0", "#94a3b8"
-    fig = plt.figure(figsize=(12, 15), dpi=110, facecolor=BG)
+    from utils.plain_summary import plain_lines
+    simple = [x for x in plain_lines(res.get("synthese")) if not x.startswith("Lecture :")][:6]
+    wrapped = [textwrap.wrap(t, 140) for t in simple]
+    n_lines = sum(len(w) for w in wrapped)
+    extra = 0.25 * n_lines + (0.5 if simple else 0)
+    H = 15 + extra
+    fig = plt.figure(figsize=(12, H), dpi=110, facecolor=BG)
     gs = fig.add_gridspec(4, 2, height_ratios=[0.55, 1, 1, 1], hspace=0.55, wspace=0.75,
-                          left=0.2, right=0.97, top=0.94, bottom=0.11)
-    fig.text(0.04, 0.975, "MAM — Conseil du comité sur un portefeuille importé", color=INK, fontsize=17, weight="bold")
-    fig.text(0.04, 0.957, f"{res['fichier']} · {res['date']} · profil {res['avant']['contraintes']['profil']} · "
-                          f"régime {res['avant']['regime']}", color=MUT, fontsize=10)
+                          left=0.2, right=0.97, top=1 - (0.06 * 15 + extra) / H, bottom=0.11 * 15 / H)
+    fig.text(0.04, 1 - 0.375 / H, "MAM — Conseil du comité sur un portefeuille importé", color=INK, fontsize=17,
+             weight="bold")
+    fig.text(0.04, 1 - 0.645 / H, f"{res['fichier']} · {res['date']} · profil {res['avant']['contraintes']['profil']} · "
+                                 f"régime {res['avant']['regime']}", color=MUT, fontsize=10)
+    if simple:  # En bref, en mots simples (v5.6)
+        y = 1 - 1.0 / H
+        fig.text(0.04, y, "EN BREF", color="#00ff88", fontsize=10.5, weight="bold", va="top")
+        y -= 0.3 / H
+        for i, w in enumerate(wrapped):
+            for j, line in enumerate(w):
+                fig.text(0.04 if j == 0 else 0.055, y, ("• " if j == 0 and i > 0 else "") + line,
+                         color=INK, fontsize=9.5, weight=("bold" if i == 0 else "normal"), va="top")
+                y -= 0.25 / H
     ax = fig.add_subplot(gs[0, :]); ax.axis("off")
     rb, ra = res["avant"].get("risque") or {}, res["apres"].get("risque") or {}
     clean = lambda v: re.sub(r"^[^A-Za-zÀ-ÿ]+", "", str(v)).capitalize()
@@ -683,8 +702,9 @@ def build_png(res: dict) -> bytes:
                for i, p in zip(d.index, d["Perf. 3 mois"])]
         a.set_yticks(np.arange(len(d)), lab); a.invert_yaxis(); a.set_xlim(0, 100)
         style(a, title)
-    fig.text(0.04, 0.083, "Vert : favorisé par le contexte · jaune : neutre · rouge : pénalisé.", color=MUT, fontsize=8.5)
-    fig.text(0.04, 0.012, "\n".join(textwrap.wrap("⚠ " + WARNING, 175)) + "\n" + CREDIT, color="#fca5a5", fontsize=8.2,
+    fig.text(0.04, 0.083 * 15 / H, "Vert : favorisé par le contexte · jaune : neutre · rouge : pénalisé.", color=MUT,
+             fontsize=8.5)
+    fig.text(0.04, 0.012 * 15 / H, "\n".join(textwrap.wrap("⚠ " + WARNING, 175)) + "\n" + CREDIT, color="#fca5a5", fontsize=8.2,
              va="bottom")
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=BG)

@@ -50,7 +50,9 @@ def render():
     # ── Paramètres ────────────────────────────────────────────────────────────
     section_title("PARAMÈTRES", "⚙️")
     prof_names = list(PROFILES)
-    default_prof = st.session_state.get("auto_profile", "Équilibré")
+    from components.committee_ui import active_profile
+    ips_prof, ips_origin = active_profile()
+    default_prof = st.session_state.get("auto_profile", ips_prof)
     cards = ""
     for p in prof_names:
         d = PROFILES[p]
@@ -63,7 +65,9 @@ def render():
         c1, c2, c3 = st.columns([1.2, 1, 1.4])
         with c1:
             profile = st.selectbox("Profil de risque", prof_names, index=prof_names.index(default_prof)
-                                   if default_prof in prof_names else 1)
+                                   if default_prof in prof_names else 1,
+                                   help=f"Par défaut : {ips_prof} ({ips_origin}). Le comité contrôle ensuite le "
+                                        "portefeuille obtenu au regard de cette politique.")
             capital = st.number_input("Capital ($)", 10_000, 100_000_000, 1_000_000, 50_000)
         with c2:
             method = st.selectbox("Méthode", list(METHODS), format_func=lambda k: METHODS[k])
@@ -428,7 +432,7 @@ def _tab_apply(ctx):
         with st.expander("🧑‍⚖️ Avis du comité MAM sur le portefeuille obtenu", expanded=True):
             rev = CM.review_portfolio(proj, max(nav0 - sum(proj.values()), 0.0), ips, get_context(),
                                       options=port.get("options", []), options_ok=get_profile().get("options_ok", False),
-                                      port_type=normalize_port_type(port), label=ports[pid][0])
+                                      port_type=normalize_port_type(port), label=ports[pid][0], port=port)
             render_review(rev)
         vetoed = rev["verdict"] == "veto"
         if vetoed:

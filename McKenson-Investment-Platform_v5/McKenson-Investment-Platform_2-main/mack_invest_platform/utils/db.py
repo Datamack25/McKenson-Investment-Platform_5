@@ -181,6 +181,9 @@ ALTER TABLE mam_users ADD COLUMN IF NOT EXISTS investor_profile JSONB;
 ALTER TABLE mam_portfolios ADD COLUMN IF NOT EXISTS ips JSONB;
 ALTER TABLE mam_portfolios ADD COLUMN IF NOT EXISTS committee JSONB;
 
+-- v5.6 : fiches de risques par ligne, dérogations de concentration, suivi du comité après création
+ALTER TABLE mam_portfolios ADD COLUMN IF NOT EXISTS extras JSONB;
+
 -- v5.1 : journal d'audit des contrôles de conformité (ajout uniquement)
 CREATE TABLE IF NOT EXISTS mam_compliance_log (
     id SERIAL PRIMARY KEY,
@@ -550,6 +553,10 @@ def get_all_teams() -> list[dict]:
 # PORTEFEUILLES
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Données de gestion v5.6 conservées dans la colonne JSONB « extras »
+EXTRA_KEYS = ("fiches_risque", "derogations", "suivi_comite")
+
+
 def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
     """Upsert complet d'un portefeuille.
     Un portefeuille existant n'est mis à jour que par son propriétaire
@@ -558,11 +565,12 @@ def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
     _run("""
         INSERT INTO mam_portfolios
             (id, team_id, user_id, name, emoji, strategy, asset_types,
-             cash, initial_cash, holdings, options, trades, history, ips, committee, updated_at)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+             cash, initial_cash, holdings, options, trades, history, ips, committee, extras, updated_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
         ON CONFLICT (id) DO UPDATE SET
             name=EXCLUDED.name, emoji=EXCLUDED.emoji, strategy=EXCLUDED.strategy,
             initial_cash=EXCLUDED.initial_cash, ips=EXCLUDED.ips, committee=EXCLUDED.committee,
+            extras=EXCLUDED.extras,
             cash=EXCLUDED.cash, holdings=EXCLUDED.holdings, options=EXCLUDED.options,
             trades=EXCLUDED.trades, history=EXCLUDED.history, updated_at=NOW()
         WHERE mam_portfolios.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
@@ -581,6 +589,8 @@ def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):
         json.dumps(port_data.get("history", [])),
         json.dumps(port_data["ips"], default=str) if port_data.get("ips") else None,
         json.dumps(port_data["committee"], default=str) if port_data.get("committee") else None,
+        json.dumps({k: port_data[k] for k in EXTRA_KEYS if port_data.get(k)}, default=str)
+        if any(port_data.get(k) for k in EXTRA_KEYS) else None,
     ))
 
 

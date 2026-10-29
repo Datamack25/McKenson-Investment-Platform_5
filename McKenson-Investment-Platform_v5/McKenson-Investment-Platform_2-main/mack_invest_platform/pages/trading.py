@@ -48,6 +48,7 @@ UNIVERSES = {
     "₿ Crypto": ["Crypto"],
     "🛢️ Matières premières": ["Commodity", "Commodities", "Futures"],
     "💱 Devises & indices": ["Forex", "Index"],
+    "🔌 Thèmes": "THEMES",          # paniers thématiques / chaînes de valeur (utils/themes.py)
 }
 
 
@@ -90,6 +91,8 @@ def render():
     # ── Comité virtuel : politique d'investissement et validation du portefeuille ─
     from components.committee_ui import committee_panel
     committee_panel(port, key=f"td_cm_{port_id}")
+    from components.committee_followup import followup_panel
+    followup_panel(port, key=f"td_fu_{port_id}")
 
     # ── Sélecteur de stratégie ────────────────────────────────────────────────
     current_type = normalize_port_type(port)
@@ -192,9 +195,38 @@ def _etf_models(port, port_type):
             return
         st.dataframe(orders.style.format({"qty": "{:,.4f}", "price": "{:,.2f}", "montant": "{:,.0f}"}),
                      use_container_width=True, hide_index=True)
+        # ── Avis du comité sur le portefeuille obtenu (profil + politique d'investissement) ──
+        vetoed, rev = False, None
+        if st.checkbox("🧑‍⚖️ Soumettre le portefeuille obtenu au comité (obligatoire avant d'investir)",
+                       key="etf_model_cm"):
+            try:
+                from utils import committee as CM
+                from components.committee_ui import get_context, portfolio_values, render_review
+                vals, cash0, _ = portfolio_values(port)
+                proj = dict(vals)
+                for _, o in orders.iterrows():
+                    proj[o["ticker"]] = proj.get(o["ticker"], 0.0) + (o["montant"] if o["action"] == "BUY"
+                                                                      else -o["montant"])
+                proj = {t: v for t, v in proj.items() if v > 1}
+                nav0 = cash0 + sum(vals.values())
+                ips = port.get("ips") or CM.default_ips(prof["risque"])
+                rev = CM.review_portfolio(proj, max(nav0 - sum(proj.values()), 0.0), ips, get_context(),
+                                          options=port.get("options", []), options_ok=prof.get("options_ok", False),
+                                          port_type=port_type, label=port.get("name", "Portefeuille"), port=port)
+                render_review(rev)
+                vetoed = rev["verdict"] == "veto"
+                if vetoed:
+                    st.error("⛔ Le comité oppose son veto : ce modèle ne convient pas à la politique "
+                             "d'investissement de ce portefeuille. Choisissez un modèle plus adapté à votre profil.")
+            except Exception as e:  # noqa: BLE001
+                st.caption(f"Avis du comité indisponible ({e}).")
+                vetoed = True
         ok = st.checkbox("Je confirme l'exécution simulée de ces ordres (chacun est contrôlé par la conformité)",
-                         key="etf_model_ok")
-        if st.button("🧺 INVESTIR DANS CE MODÈLE", disabled=not ok, key="etf_model_go", use_container_width=True):
+                         key="etf_model_ok", disabled=rev is None or vetoed)
+        if st.button("🧺 INVESTIR DANS CE MODÈLE", disabled=not ok or rev is None or vetoed, key="etf_model_go",
+                     use_container_width=True):
+            from utils.committee import summary_for_storage
+            port["committee"] = summary_for_storage(rev)
             errs = execute_orders(port, orders, tag=f"modèle ETF {name}")
             persist()
             if errs:
@@ -211,8 +243,15 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
     with col_l:
         univ = st.radio("Univers", list(UNIVERSES), horizontal=True, key="spot_universe")
         cats = UNIVERSES[univ]
-        df_u = assets_df if not cats or "category" not in assets_df.columns \
-            else assets_df[assets_df["category"].isin(cats)]
+        if cats == "THEMES":
+            from utils.themes import THEMES, theme_universe
+            th_name = st.selectbox("Thème", list(THEMES), key="spot_theme",
+                                   format_func=lambda n: f"{THEMES[n]['emoji']} {n}")
+            st.caption(THEMES[th_name]["idee"] + f" Risque commun : {THEMES[th_name]['risque_commun']}.")
+            df_u = assets_df[assets_df["ticker"].isin(theme_universe(th_name))]
+        else:
+            df_u = assets_df if not cats or "category" not in assets_df.columns \
+                else assets_df[assets_df["category"].isin(cats)]
         if df_u.empty:
             df_u = assets_df
         ticker_opts = {f'{r["ticker"]} — {r.get("name",r["ticker"])}': r["ticker"]
@@ -289,6 +328,10 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
                                   category=str(a_s.get("category", "Equity")))
         render_decision(decision)
         errors = [c for c in decision.blocks]
+        from components.desk_tools_ui import derogation_request, earnings_notice, thesis_form
+        derogation_request(port, ticker, decision, str(a_s.get("category", "Equity")), key=f"spot_{port_id}")
+        earnings_notice(ticker)
+        thesis, _missing = thesis_form(f"spot_th_{port_id}", ticker, is_buy)
 
         btn_c = "#00ff88" if is_buy else "#ff3b6b"
         st.markdown(
@@ -300,8 +343,10 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
             f'</div>', unsafe_allow_html=True)
 
         if st.button(f'{"✅ ACHETER" if is_buy else "🔴 VENDRE"} {qty:,.4f} × {ticker}',
-                     disabled=bool(errors), key="spot_exec", type="primary" if not errors else "secondary"):
-            err = record_trade(port, ticker, "BUY" if is_buy else "SELL", qty, price, source="Trading Desk")
+                     disabled=bool(errors) or thesis is None, key="spot_exec",
+                     type="primary" if not errors and thesis else "secondary"):
+            err = record_trade(port, ticker, "BUY" if is_buy else "SELL", qty, price, source="Trading Desk",
+                               meta={"these": thesis})
             if err: st.error(err)
             else:
                 st.success(f"✅ {'Achat' if is_buy else 'Vente'} : {qty:,.4f} × {ticker} @ ${price:,.4f}")
@@ -853,15 +898,19 @@ def _positions_tab(port, assets_df):
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── TAB interne : Holdings / Options / Historique ─────────────────────────
-    sub_hold, sub_opt, sub_hist, sub_cmp = st.tabs([
+    sub_hold, sub_opt, sub_hist, sub_cmp, sub_disc = st.tabs([
         f"📊 HOLDINGS ({len(holdings)} position{'s' if len(holdings)!=1 else ''})",
         f"⚙️ OPTIONS ({len(options)} position{'s' if len(options)!=1 else ''})",
         f"🔄 HISTORIQUE ({len(trades)} trade{'s' if len(trades)!=1 else ''})",
         "🛡️ EXPOSITION & CONFORMITÉ",
+        "🧭 DISCIPLINE DE GESTION",
     ])
 
     with sub_cmp:
         _exposure_panel(port, live, total_val)
+    with sub_disc:
+        from components.desk_tools_ui import discipline_tab
+        discipline_tab(port, live, total_val)
 
     # ── HOLDINGS ──────────────────────────────────────────────────────────────
     with sub_hold:

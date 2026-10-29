@@ -82,18 +82,37 @@ def _perf_axes(ax, nav: pd.Series | None, bench: pd.Series | None, bench_name: s
             ax.set_xlabel("% du portefeuille (historique de performance insuffisant)", color=mut, fontsize=8)
 
 
+def _simple_panel(fig, simple: dict | None, x: float, y: float, w: float, h: float):
+    """Panneau « En bref » : la performance et sa cause, en langage simple."""
+    p = _panel(fig, x, y, w, h, "En bref — votre portefeuille en mots simples")
+    p.add_patch(plt.Rectangle((0, 0), .006, 1, color=GREEN, transform=p.transAxes))
+    phrases = [s_ for s_ in ((simple or {}).get("phrases") or []) if not s_.startswith("Lecture :")]
+    if not phrases:
+        phrases = ["Synthèse indisponible."]
+    first = _plain(phrases[0]) if phrases[0].startswith("**") else None
+    rest = phrases[1:] if first else phrases
+    yy = .80
+    if first:
+        p.text(.02, yy, _wrap(first, 120), color=INK, fontsize=10, fontweight="bold", va="top")
+        yy -= .13 * (1 + first.count("\n") + len(first) // 120)
+    body = "\n".join("• " + _wrap(_plain(t_), 128).replace("\n", "\n  ") for t_ in rest[:5])
+    p.text(.02, yy, "\n".join(body.split("\n")[:8]), color=INK2, fontsize=8.3, va="top", linespacing=1.35)
+    p.text(.98, .04, "1 point = 1 % de la valeur du portefeuille au début de la période", color=MUTED,
+           fontsize=7, ha="right", va="bottom")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PNG UNE PAGE — rapport hebdomadaire du comité
 # ══════════════════════════════════════════════════════════════════════════════
 def committee_png(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.Series | None = None,
                   bench_name: str = "S&P 500", data_sim: bool = False) -> bytes:
-    fig = plt.figure(figsize=(12, 17.5), dpi=130, facecolor=BG)
+    fig = plt.figure(figsize=(12, 19.5), dpi=130, facecolor=BG)
     cons, risk = rev["contraintes"], rev.get("risque") or {}
     v = rev["verdict"]
     vcol = VOTE_COL[v]
 
     # En-tête
-    hd = fig.add_axes([0.03, 0.94, 0.94, 0.05])
+    hd = fig.add_axes([0.03, 0.945, 0.94, 0.045])
     hd.axis("off")
     hd.text(0, .9, "McKENSON ASSET MANAGEMENT  ·  " + C.COMMITTEE_NAME, color=CYAN, fontsize=11,
             fontweight="bold", va="top")
@@ -105,17 +124,20 @@ def committee_png(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
         hd.text(1, .02, "DONNÉES PARTIELLEMENT SIMULÉES", color=RED, fontsize=9, ha="right", fontweight="bold")
 
     # Verdict
-    ax = _panel(fig, .03, .885, .94, .048)
+    ax = _panel(fig, .03, .895, .94, .043)
     ax.add_patch(plt.Rectangle((0, 0), .008, 1, color=vcol, transform=ax.transAxes))
     ax.text(.025, .68, _plain(rev["verdict_label"]), color=vcol, fontsize=15, fontweight="bold", va="center")
     ax.text(.025, .26, f"Régime officiel : {rev.get('regime', '—')}  ·  "
             + "  ·  ".join(f"{SHORT[a['id']]} : {VOTE_TXT[a['vote']]}" for a in rev["avis"][:5]),
             color=INK2, fontsize=8.8, va="center")
 
+    # En bref — synthèse en langage simple (v5.6)
+    _simple_panel(fig, rev.get("synthese_simple"), .03, .79, .94, .098)
+
     # Graphique + chiffres clés
-    _panel(fig, .03, .655, .60, .22, "Portefeuille vs marché (base 100)" if nav is not None and len(nav) >= 2
+    _panel(fig, .03, .575, .60, .207, "Portefeuille vs marché (base 100)" if nav is not None and len(nav) >= 2
            else "Répartition par classe d'actifs")
-    axg = fig.add_axes([.075, .675, .53, .165])
+    axg = fig.add_axes([.075, .593, .53, .157])
     _perf_axes(axg, nav, bench, bench_name, True, rev)
     perf = None
     if nav is not None and len(nav.dropna()) >= 2:
@@ -127,13 +149,13 @@ def committee_png(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
              ("Pire stress test", _pct((risk.get("pire_scenario") or ("", None))[1], True),
               _plain((risk.get("pire_scenario") or ("", ""))[0])[:30])]
     for i, (lab, val, sub) in enumerate(tiles):
-        t = _panel(fig, .645, .835 - i * .045, .325, .04)
+        t = _panel(fig, .645, .742 - i * .042, .325, .037)
         t.text(.04, .72, lab.upper(), color=MUTED, fontsize=7.8, fontweight="bold", va="center")
         t.text(.04, .3, val, color=INK, fontsize=13, fontweight="bold", va="center")
         t.text(.97, .3, sub, color=INK2, fontsize=7.6, va="center", ha="right")
 
     # Avis des 6 membres
-    y0, h = .615, .136
+    y0, h = .565, .125
     for i, a in enumerate(rev["avis"]):
         col, row = i % 2, i // 2
         x, y = .03 + col * .475, y0 - (row + 1) * (h + .008) + .008
@@ -213,6 +235,10 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
     perf = (float(nav.dropna().iloc[-1] / nav.dropna().iloc[0] - 1)
             if nav is not None and len(nav.dropna()) >= 2 else None)
     b: list[tuple] = []
+
+    # ── En bref : la performance et sa cause en mots simples (v5.6) ──
+    from utils.plain_summary import pdf_blocks
+    b += pdf_blocks(rev.get("synthese_simple"))
 
     # ── Page 1 : synthèse (CPM) ──
     cpm = A_["cpm"]
@@ -328,12 +354,15 @@ def committee_email_html(rev: dict, name: str) -> str:
                     f'<span style="color:#64748b">— {html.escape(r["qui"])}</span></li>'
                     for r in rev.get("recommandations", [])) or "<li>Aucune action nécessaire.</li>"
     dec = "".join(f"<li>{html.escape(_plain(d))}</li>" for d in rev.get("decisions", []))
+    from utils.plain_summary import html_block
+    simple = html_block(rev.get("synthese_simple"))
     return f"""<html><body style="background:#080e1a;font-family:Arial,sans-serif;padding:18px">
 <div style="max-width:760px;margin:auto">
  <div style="color:#00d4ff;font-size:13px;font-weight:700;letter-spacing:2px">McKENSON ASSET MANAGEMENT · {C.COMMITTEE_NAME}</div>
  <div style="color:#e2e8f0;font-size:20px;font-weight:700;margin:6px 0">Rapport hebdomadaire — {html.escape(name)}</div>
  <div style="border-left:4px solid {vcol};background:#0d1626;padding:10px 14px;margin:10px 0;color:{vcol};font-weight:700">
    {html.escape(_plain(rev['verdict_label']))} · régime : {html.escape(str(rev.get('regime', '—')))}</div>
+ {simple}
  <table style="width:100%;border-collapse:collapse;background:#0d1626;font-size:13px">{rows}</table>
  <div style="color:#ff8c00;font-weight:700;margin:14px 0 4px">Synthèse et recommandations — Marc ETING-FINANCIER</div>
  <ul style="color:#cbd5e1;font-size:13px;margin:0">{recos}</ul>
@@ -375,7 +404,12 @@ def build_for_portfolio(port: dict, ctx: dict, prices_live: dict | None = None, 
             hedges = []
     rev = C.review_portfolio(vals, cash, ips, ctx, options=port.get("options", []), options_ok=options_ok,
                              port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"),
-                             perf=perf, hedges=hedges)
+                             perf=perf, hedges=hedges, port=port)
+    try:  # En bref : surperformance / sous-performance et sa cause, en mots simples (v5.6)
+        from utils.plain_summary import plain_summary
+        rev["synthese_simple"] = plain_summary(port, bench_name, bench=bench if len(bench) >= 2 else None)
+    except Exception:
+        rev["synthese_simple"] = None
     name = port.get("name", "Portefeuille")
     return dict(review=rev, nav=nav_s, bench=bench, hedges=hedges, ips=ips,
                 png=committee_png(rev, name, nav_s, bench, bench_name, ctx.get("data_sim", False)),

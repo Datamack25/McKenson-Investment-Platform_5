@@ -10,7 +10,7 @@ from __future__ import annotations
 _EQUITY = {
     # Technologie
     **dict.fromkeys(["AAPL", "MSFT", "NVDA", "AMD", "INTC", "QCOM", "AVGO", "CRM", "ORCL", "IBM", "ASML.AS",
-                     "SAP.DE", "STMPA.PA", "TCS.NS", "005930.KS", "000660.KS", "6758.T"], "Technologie"),
+                     "SAP.DE", "STMPA.PA", "TCS.NS", "005930.KS", "000660.KS", "6758.T", "TSM", "AMAT"], "Technologie"),
     # Communication / médias / internet
     **dict.fromkeys(["GOOGL", "GOOG", "META", "NFLX", "DIS", "T", "VZ", "CMCSA", "0700.HK", "9432.T",
                      "9984.T", "7974.T"], "Communication & médias"),
@@ -30,13 +30,14 @@ _EQUITY = {
     # Énergie
     **dict.fromkeys(["XOM", "CVX", "COP", "TTE.PA", "BP.L", "SHEL.L", "ENI.MI", "RELIANCE.NS"], "Énergie"),
     # Services publics
-    **dict.fromkeys(["NEE", "DUK", "ENEL.MI", "IBE.MC"], "Services publics"),
+    **dict.fromkeys(["NEE", "DUK", "ENEL.MI", "IBE.MC", "CEG"], "Services publics"),
     # Industrie / défense
     **dict.fromkeys(["CAT", "GE", "MMM", "HON", "SIE.DE", "ADANIENT.NS"], "Industrie"),
+    **dict.fromkeys(["ETN", "VRT", "SU.PA"], "Industrie — équipements électriques"),
     **dict.fromkeys(["BA", "LMT", "RTX", "AIR.PA", "RHM.DE"], "Industrie — aéronautique & défense"),
     # Immobilier / matériaux
     **dict.fromkeys(["SPG", "AMT", "PLD"], "Immobilier"),
-    **dict.fromkeys(["RIO.L"], "Matériaux"),
+    **dict.fromkeys(["RIO.L", "FCX", "NUE"], "Matériaux"),
 }
 
 _ETF = {

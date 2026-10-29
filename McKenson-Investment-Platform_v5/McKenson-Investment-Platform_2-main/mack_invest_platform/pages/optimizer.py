@@ -241,7 +241,8 @@ def _committee_optimizer():
                 if pref.startswith("Seulement"):
                     hedges = [h for h in hedges if h["recommandee"]]
             common = dict(options=port.get("options", []), options_ok=get_profile().get("options_ok", False),
-                          port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"))
+                          port_type=normalize_port_type(port), label=port.get("name", "Portefeuille"),
+                          port=port)
             before = CM.review_portfolio(vals, cash, port["ips"], ctx, **common)
             after = CM.review_portfolio(opt["projete"], opt["cash_apres"], port["ips"], ctx, hedges=hedges, **common)
         st.session_state["cmo_out"] = dict(key=sel, opt=opt, before=before, after=after, hedges=hedges,
