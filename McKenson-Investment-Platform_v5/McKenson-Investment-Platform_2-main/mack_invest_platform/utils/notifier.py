@@ -73,10 +73,45 @@ def get_config() -> dict | None:
         return None
 
 
-def _recipient() -> str | None:
+def recipients() -> list[str]:
+    """v5.10 — adresse du compte + destinataires supplémentaires choisis dans 🔔 (profil investisseur)."""
+    from utils.alerts import parse_recipients
     user = st.session_state.get("mam_user")
-    mail = (user or {}).get("email", "")
-    return mail if mail and "@" in mail else None
+    extra = []
+    try:
+        from utils.compliance import get_profile
+        extra = get_profile().get("destinataires") or []
+    except Exception:
+        pass
+    return parse_recipients([(user or {}).get("email", "")] + list(extra))
+
+
+def _recipient() -> str | None:
+    r = recipients()
+    return ", ".join(r) if r else None
+
+
+def save_extra_recipients(value: str) -> list[str]:
+    """Enregistre les destinataires supplémentaires dans le profil investisseur (session + base),
+    sans toucher au reste du profil (questionnaire, test sur les options)."""
+    from utils.alerts import parse_recipients
+    from utils.compliance import get_profile
+    user = st.session_state.get("mam_user") or {}
+    user_mail = (user.get("email") or "").lower()
+    lst = [x for x in parse_recipients(value) if x.lower() != user_mail]
+    raw = dict(st.session_state.get("mam_investor_profile") or {})
+    if not raw:
+        get_profile()
+        raw = dict(st.session_state.get("mam_investor_profile") or {})
+    raw["destinataires"] = lst
+    st.session_state["mam_investor_profile"] = raw
+    if user.get("id"):
+        try:
+            from utils.db import save_investor_profile
+            save_investor_profile(user["id"], raw)
+        except Exception:
+            pass
+    return lst
 
 
 def _enabled() -> bool:
@@ -108,7 +143,8 @@ def _smtp_send(cfg: dict, to: str, subject: str, html_body: str, text_body: str)
             server.ehlo()
         if cfg["user"] and cfg["password"]:
             server.login(cfg["user"], cfg["password"])
-        server.sendmail(addr or cfg["user"], [to], msg.as_string())
+        from utils.alerts import parse_recipients
+        server.sendmail(addr or cfg["user"], parse_recipients(to) or [to], msg.as_string())
     finally:
         try:
             server.quit()
@@ -357,7 +393,19 @@ def render_settings():
         st.caption("Connectez-vous avec un compte pour recevoir les notifications.")
         return
     st.toggle("Recevoir un email quand mon portefeuille bouge", value=True, key="mail_enabled")
-    st.caption(f"Destinataire : {to}")
+    st.caption(f"Destinataire(s) : {to}")
+    try:
+        from utils.compliance import get_profile
+        cur = ", ".join(get_profile().get("destinataires") or [])
+    except Exception:
+        cur = ""
+    with st.form("mail_extra_form", border=False):
+        val = st.text_input("Autres destinataires (séparés par des virgules)", value=cur,
+                            placeholder="adresse2@gmail.com, adresse3@gmail.com")
+        if st.form_submit_button("Enregistrer les destinataires", use_container_width=True):
+            lst = save_extra_recipients(val)
+            st.success(f"{len(lst)} destinataire(s) supplémentaire(s) enregistré(s).")
+            st.rerun()
     if cfg["nav_alert_pct"] > 0:
         st.caption(f"Alerte de variation de valeur : ±{cfg['nav_alert_pct']:g} %")
     if st.button("✉️ Envoyer un email de test", key="mail_test", use_container_width=True):

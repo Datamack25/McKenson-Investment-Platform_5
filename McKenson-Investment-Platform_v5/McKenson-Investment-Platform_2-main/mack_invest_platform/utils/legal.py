@@ -6,7 +6,7 @@ rapports PDF / PNG, e-mails, pages IA). Modifier ici met à jour toute la platef
 from __future__ import annotations
 
 APP_NAME = "MAM — McKenson Asset Management"
-APP_VERSION = "5.9.0"
+APP_VERSION = "5.10.0"
 APP_RELEASE = "octobre 2026"
 AUTHOR = "Mackenson CINEUS"
 AUTHOR_TITLE = "diplômé d'un MBA Finance de marché"

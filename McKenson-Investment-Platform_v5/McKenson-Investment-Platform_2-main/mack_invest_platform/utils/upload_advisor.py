@@ -633,9 +633,11 @@ def build_png(res: dict) -> bytes:
     fig = plt.figure(figsize=(12, H), dpi=110, facecolor=BG)
     gs = fig.add_gridspec(4, 2, height_ratios=[0.55, 1, 1, 1], hspace=0.55, wspace=0.75,
                           left=0.2, right=0.97, top=1 - (0.06 * 15 + extra) / H, bottom=0.11 * 15 / H)
-    fig.text(0.04, 1 - 0.375 / H, "MAM — Conseil du comité sur un portefeuille importé", color=INK, fontsize=17,
+    from utils.brand import add_to_figure
+    lx = 0.04 + (0.06 if add_to_figure(fig, 0.04, 1 - 0.78 / H, 0.62 / H) is not None else 0)   # logo MAM
+    fig.text(lx, 1 - 0.375 / H, "MAM — Conseil du comité sur un portefeuille importé", color=INK, fontsize=17,
              weight="bold")
-    fig.text(0.04, 1 - 0.645 / H, f"{res['fichier']} · {res['date']} · profil {res['avant']['contraintes']['profil']} · "
+    fig.text(lx, 1 - 0.645 / H, f"{res['fichier']} · {res['date']} · profil {res['avant']['contraintes']['profil']} · "
                                  f"régime {res['avant']['regime']}", color=MUT, fontsize=10)
     if simple:  # En bref, en mots simples (v5.6)
         y = 1 - 1.0 / H

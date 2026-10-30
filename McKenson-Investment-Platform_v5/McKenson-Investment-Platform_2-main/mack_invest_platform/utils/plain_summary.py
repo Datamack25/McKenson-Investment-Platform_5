@@ -432,7 +432,10 @@ def summary_png(summary: dict | None, title: str = TITLE, theme: str = "light") 
         lines.append((wrapped, p.startswith("**"), txt.startswith("Lecture :")))
     n = sum(len(w) for w, _, _ in lines) + len(lines)
     fig = plt.figure(figsize=(12, max(2.6, 0.9 + 0.27 * n)), dpi=130, facecolor=bg)
-    fig.text(0.03, 1 - 0.32 / fig.get_figheight(), title, color=acc, fontsize=15, weight="bold", va="top")
+    from utils.brand import add_to_figure
+    H_ = fig.get_figheight()
+    tx = 0.03 + (0.045 if add_to_figure(fig, 0.03, 1 - 0.68 / H_, 0.5 / H_) is not None else 0)
+    fig.text(tx, 1 - 0.32 / H_, title, color=acc, fontsize=15, weight="bold", va="top")
     y = 1 - 0.85 / fig.get_figheight()
     step = 0.27 / fig.get_figheight()
     for wrapped, bold, note in lines:

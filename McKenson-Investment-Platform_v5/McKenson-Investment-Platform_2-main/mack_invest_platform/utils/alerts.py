@@ -509,6 +509,20 @@ def _clean(v):
     return str(v).strip().strip('"').strip("'").strip()
 
 
+def parse_recipients(value) -> list[str]:
+    """v5.10 — « a@x.com, b@y.com ; c@z.com » (ou liste) → adresses valides, sans doublon, ordre conservé."""
+    import re
+    if not value:
+        return []
+    items = value if isinstance(value, (list, tuple, set)) else re.split(r"[,;\s]+", str(value))
+    out = []
+    for x in items:
+        x = _clean(x) or ""
+        if re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", x) and x.lower() not in [o.lower() for o in out]:
+            out.append(x)
+    return out
+
+
 def smtp_config() -> dict | None:
     host = _clean(_cfg("email", "smtp_host", "SMTP_HOST"))
     user = _clean(_cfg("email", "smtp_user", "SMTP_USER"))
@@ -545,9 +559,11 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
     cfg = smtp_config()
     if not cfg:
         return "SMTP non configuré"
-    to = _clean(to)
+    rcpt = parse_recipients(to)                 # v5.10 : plusieurs destinataires possibles
+    if not rcpt:
+        return f"Aucune adresse de destination valide ({to!r})"
     msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = subject, f"MAM Hedge Fund Agent <{cfg['user']}>", to
+    msg["Subject"], msg["From"], msg["To"] = subject, f"MAM Hedge Fund Agent <{cfg['user']}>", ", ".join(rcpt)
     msg.set_content("Ce message est au format HTML.")
     msg.add_alternative(html_body, subtype="html")
     for fname, data, mime in attachments or []:
@@ -566,7 +582,7 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
                     stage = "authentification (login)"
                     s.login(cfg["user"], cfg["password"])
                     stage = "envoi du message"
-                    s.send_message(msg)
+                    s.send_message(msg, to_addrs=rcpt)
             else:
                 with smtplib.SMTP(cfg["host"], port, timeout=40) as s:
                     stage = "présentation (EHLO)"
@@ -579,7 +595,7 @@ def send_email(to: str, subject: str, html_body: str, attachments: list | None =
                         stage = "authentification (login)"
                         s.login(cfg["user"], cfg["password"])
                     stage = "envoi du message"
-                    s.send_message(msg)
+                    s.send_message(msg, to_addrs=rcpt)
             return None
         except smtplib.SMTPAuthenticationError as e:
             # identifiants refusés : inutile d'essayer un autre port
@@ -614,7 +630,8 @@ def smtp_diagnostic() -> list:
         f"{ok(len(p) == 16)} SMTP_PASSWORD fait 16 caractères hors espaces (lu : {len(p)})",
         f"{ok(p.isalpha() and p.islower())} SMTP_PASSWORD ne contient que des lettres minuscules",
         f"{ok(raw_pwd == raw_pwd.strip())} SMTP_PASSWORD sans espace ni retour à la ligne au début/à la fin",
-        f"{ok(bool(to) and '@' in (to or ''))} REPORT_TO contient une adresse email",
+        f"{ok(bool(parse_recipients(to)))} REPORT_TO contient au moins une adresse email valide "
+        f"({len(parse_recipients(to))} adresse(s) ; séparer plusieurs adresses par des virgules)",
     ]
     return out
 

@@ -61,6 +61,15 @@ def _title(ax, t, title, sub=None):
 def _png(fig) -> bytes:
     buf = io.BytesIO()
     fig.tight_layout()
+    try:  # v5.10 : petit logo MAM en haut à droite de chaque image exportée
+        from utils.brand import add_to_figure
+        fw, fh = fig.get_size_inches()
+        h = min(0.10, 0.42 / fh)
+        lax = add_to_figure(fig, 1 - h * fh / fw - 0.006, 1 - h - 0.006, h)
+        if lax is not None:
+            lax.set_alpha(0.9)
+    except Exception:
+        pass
     fig.savefig(buf, format="png", facecolor=fig.get_facecolor(), bbox_inches="tight")
     plt.close(fig)
     return buf.getvalue()
@@ -360,14 +369,22 @@ def make_pdf(title: str, subtitle: str, blocks: list[tuple]) -> bytes:
                             topMargin=1.5 * cm, bottomMargin=1.6 * cm, title=title,
                             author=_LEGAL.AUTHOR + " — MAM McKenson Asset Management")
     width = A4[0] - 3.2 * cm
+    from reportlab.lib.utils import ImageReader
+    from utils import brand as _brand
+    _lb = _brand.png_bytes("mark")
+    logo = ImageReader(io.BytesIO(_lb)) if _lb else None
 
     def on_page(c, d):
         c.saveState()
         c.setFillColor(navy)
         c.rect(0, A4[1] - .55 * cm, A4[0], .55 * cm, fill=1, stroke=0)
+        x_txt = 1.6 * cm
+        if logo is not None:   # v5.10 : logo MAM dans le bandeau de chaque page
+            c.drawImage(logo, 1.6 * cm, A4[1] - .5 * cm, width=.45 * cm, height=.45 * cm, mask="auto")
+            x_txt = 2.2 * cm
         c.setFillColor(colors.HexColor("#00d4ff"))
         c.setFont(bold, 7.5)
-        c.drawString(1.6 * cm, A4[1] - .37 * cm, f"MAM · McKenson Asset Management · v{_LEGAL.APP_VERSION}")
+        c.drawString(x_txt, A4[1] - .37 * cm, f"MAM · McKenson Asset Management · v{_LEGAL.APP_VERSION}")
         c.setFillColor(muted)
         c.setFont(reg, 7)
         c.setFont(reg, 6.3)
@@ -379,8 +396,14 @@ def make_pdf(title: str, subtitle: str, blocks: list[tuple]) -> bytes:
         c.drawRightString(A4[0] - 1.6 * cm, 1.1 * cm, f"Page {d.page}")
         c.restoreState()
 
-    story = [Paragraph(_clean(title), S["title"]), Spacer(1, 3), Paragraph(_clean(subtitle), S["sub"]),
-             Spacer(1, 10)]
+    head = [Paragraph(_clean(title), S["title"]), Spacer(1, 3), Paragraph(_clean(subtitle), S["sub"])]
+    if logo is not None:       # page de titre : logo à gauche du titre
+        lt = Table([[Image(io.BytesIO(_brand.png_bytes("mark")), width=1.5 * cm, height=1.5 * cm), head]],
+                   colWidths=[1.9 * cm, width - 1.9 * cm])
+        lt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+        story = [lt, Spacer(1, 10)]
+    else:
+        story = head + [Spacer(1, 10)]
     for b in blocks:
         kind = b[0]
         if kind == "h":

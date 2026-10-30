@@ -1,13 +1,19 @@
-📈 McKenson Investment Platform - MIP — version 5.9.0
+📈 McKenson Investment Platform - MIP — version 5.10.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.9.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.10.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.10 — Logo MAM et plusieurs destinataires
+
+🎨 **Identité visuelle** : nouveau logo MAM (dossier assets/ : logo seul, logo avec « MAM », bannière, icône d'onglet) dans l'en-tête de la plateforme, l'écran de connexion, l'onglet du navigateur, le bandeau et la page de titre des rapports PDF, les rapports PNG (comité, hebdomadaire, portefeuille importé, « En bref ») et chaque graphique exporté (utils/brand.py).
+
+📧 **Plusieurs destinataires** partout, séparés par des virgules : 🔔 → « Autres destinataires » (test, alertes de variation), rapport du comité et suivi du lundi (page Rapports), rapport mensuel investisseur, secret GitHub `REPORT_TO`. Les adresses invalides sont ignorées ; le diagnostic indique combien d'adresses ont été lues.
 
 Nouveautés v5.9 — Avis du comité à la création : analyser, corriger, ajuster
 
@@ -363,4 +369,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.9.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.10.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

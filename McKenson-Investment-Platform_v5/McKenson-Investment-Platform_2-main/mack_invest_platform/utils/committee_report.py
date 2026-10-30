@@ -112,7 +112,9 @@ def committee_png(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
     vcol = VOTE_COL[v]
 
     # En-tête
-    hd = fig.add_axes([0.03, 0.945, 0.94, 0.045])
+    from utils.brand import add_to_figure
+    has_logo = add_to_figure(fig, 0.03, 0.947, 0.04) is not None     # v5.10 : logo MAM
+    hd = fig.add_axes([0.03 + (0.065 if has_logo else 0), 0.945, 0.94 - (0.065 if has_logo else 0), 0.045])
     hd.axis("off")
     hd.text(0, .9, "McKENSON ASSET MANAGEMENT  ·  " + C.COMMITTEE_NAME, color=CYAN, fontsize=11,
             fontweight="bold", va="top")

@@ -58,7 +58,9 @@ def build_weekly_png(macro, news: dict, alerts: list, review: dict | None = None
     fig = plt.figure(figsize=(12, 17), dpi=130, facecolor=BG)
 
     # ── En-tête ───────────────────────────────────────────────────────────────
-    hd = fig.add_axes([0.03, 0.935, 0.94, 0.055])
+    from utils.brand import add_to_figure
+    lg = add_to_figure(fig, 0.03, 0.94, 0.045) is not None             # v5.10 : logo MAM
+    hd = fig.add_axes([0.03 + (0.07 if lg else 0), 0.935, 0.94 - (0.07 if lg else 0), 0.055])
     hd.axis("off")
     hd.text(0, 0.85, "McKENSON ASSET MANAGEMENT  ·  HEDGE FUND AGENT", color=CYAN, fontsize=11,
             fontweight="bold", va="top")

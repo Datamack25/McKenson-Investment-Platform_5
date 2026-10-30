@@ -169,10 +169,13 @@ def _committee_report(pid: str, port: dict):
 
     st.markdown("##### 📬 Envoi et rapport automatique du lundi")
     user = A.current_user_key()
-    default_mail = (st.session_state.get("mam_user") or {}).get("email") or (user if "@" in user else "")
+    from utils.notifier import recipients as _rcpts
+    from utils.alerts import parse_recipients
+    default_mail = ", ".join(_rcpts()) or (user if "@" in user else "")
     e1, e2 = st.columns([2, 1])
-    to = e1.text_input("Adresse de réception", value=default_mail, key="crep_to")
-    if e2.button("📧 Envoyer maintenant", key="crep_send", use_container_width=True) and to:
+    to = e1.text_input("Adresse(s) de réception — plusieurs adresses séparées par des virgules",
+                       value=default_mail, key="crep_to")
+    if e2.button("📧 Envoyer maintenant", key="crep_send", use_container_width=True) and parse_recipients(to):
         err = AL.send_email(to, f"🧑‍⚖️ Rapport du comité MAM — {port.get('name')} — {pd.Timestamp.today():%d/%m/%Y}",
                             out["html"], [(f"{fname}.png", out["png"], "image/png"),
                                           (f"{fname}.pdf", out["pdf"], "application/pdf")])
@@ -183,13 +186,14 @@ def _committee_report(pid: str, port: dict):
     subs = {s["portfolio_name"]: s for s in AL.subscriptions(user)}
     cur = subs.get(port.get("name"))
     if st.button(("🔁 Mettre à jour le suivi" if cur else "📬 Recevoir ce rapport chaque lundi"), key="crep_sub"):
-        if not to or "@" not in to:
+        if not parse_recipients(to):
             st.error("Adresse e-mail invalide.")
         else:
             vals = {t: h.get("qty", 0) * h.get("avg_price", 0) for t, h in (port.get("holdings") or {}).items()}
             vals["CASH"] = port.get("cash", 0.0)
             prof = constraints(port.get("ips") or default_ips(get_profile().get("risque", "Équilibré")))["profil"]
-            ok = AL.subscribe(user, to, port.get("name"), prof, vals, True, True, "important")
+            ok = AL.subscribe(user, ", ".join(parse_recipients(to)), port.get("name"), prof, vals, True, True,
+                              "important")
             st.success(f"C'est noté : le comité examinera « {port.get('name')} » chaque lundi et vous enverra son "
                        "rapport (PNG + PDF).") if ok else st.error("Enregistrement impossible : base injoignable.")
     if cur:
@@ -244,10 +248,11 @@ def _investor_report(pid: str, port: dict):
     d1, d2, d3 = st.columns([1, 1.4, 0.8])
     d1.download_button("⬇️ Rapport mensuel (PDF)", out["pdf"], f"{fname}.pdf", "application/pdf",
                        use_container_width=True, key="irep_pdf")
-    default_mail = (st.session_state.get("mam_user") or {}).get("email") or ""
-    to = d2.text_input("Envoyer à", value=default_mail, key="irep_to", label_visibility="collapsed",
-                       placeholder="adresse e-mail de l'investisseur")
-    if d3.button("📧 Envoyer", key="irep_send", use_container_width=True) and to:
+    from utils.notifier import recipients as _rcpts
+    from utils.alerts import parse_recipients
+    to = d2.text_input("Envoyer à", value=", ".join(_rcpts()), key="irep_to", label_visibility="collapsed",
+                       placeholder="adresse1@gmail.com, adresse2@gmail.com")
+    if d3.button("📧 Envoyer", key="irep_send", use_container_width=True) and parse_recipients(to):
         err = AL.send_email(to, f"Rapport mensuel MAM — {port.get('name')} — {out['periode']}", out["html"],
                             [(f"{fname}.pdf", out["pdf"], "application/pdf")])
         st.success("Rapport envoyé.") if not err else st.error(f"Envoi impossible : {err}")

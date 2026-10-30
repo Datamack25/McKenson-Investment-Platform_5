@@ -128,9 +128,19 @@ def _box(kind: str, html: str):
     st.markdown(f'<div class="auth-{kind}">{html}</div>', unsafe_allow_html=True)
 
 
+def _mark() -> str:
+    try:
+        from utils.brand import mark_svg_inline
+        return mark_svg_inline(84)
+    except Exception:
+        return ""
+
+
 def _logo():
     st.markdown(f"""
     <div class="auth-logo">
+        <div style="display:flex;justify-content:center;margin-bottom:8px;
+                    filter:drop-shadow(0 0 18px rgba(0,255,136,.35))">{_mark()}</div>
         <div class="title">MAM</div>
         <div class="sub">McKENSON ASSET MANAGEMENT · v{APP_VERSION}</div>
         <div class="sub" style="color:#475569;margin-top:4px;">par {AUTHOR}, {AUTHOR_TITLE}</div>

@@ -6,9 +6,12 @@ import threading
 from datetime import datetime
 
 # ── Page config ───────────────────────────────────────────────────────────────
+from utils.brand import page_icon as _page_icon
+from utils.legal import APP_VERSION as _APP_VERSION
+
 st.set_page_config(
-    page_title="MAM — McKenson Asset Management · v5.3",
-    page_icon="📈",
+    page_title=f"MAM — McKenson Asset Management · v{_APP_VERSION}",
+    page_icon=_page_icon(),
     layout="wide",
     initial_sidebar_state="collapsed",
 )
