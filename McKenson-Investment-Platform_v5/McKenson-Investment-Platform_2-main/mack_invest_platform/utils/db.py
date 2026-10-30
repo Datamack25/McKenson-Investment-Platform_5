@@ -554,7 +554,7 @@ def get_all_teams() -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Données de gestion v5.6 conservées dans la colonne JSONB « extras »
-EXTRA_KEYS = ("fiches_risque", "derogations", "suivi_comite", "mouvements", "revenus_maj")
+EXTRA_KEYS = ("fiches_risque", "derogations", "suivi_comite", "mouvements", "revenus_maj", "suivi_gerants")
 
 
 def save_portfolio(port_id: str, team_id: str, user_id: int, port_data: dict):

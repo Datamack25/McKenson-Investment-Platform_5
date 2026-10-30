@@ -57,6 +57,8 @@ def render():
     st.markdown("<br>", unsafe_allow_html=True)
     _investor_report(pid, port)
     st.markdown("<br>", unsafe_allow_html=True)
+    _smart_money_section()
+    st.markdown("<br>", unsafe_allow_html=True)
     section_title("RAPPORT DE PERFORMANCE DÉTAILLÉ", "📊")
 
     if st.button("🧾 Générer le rapport", use_container_width=True, key="rep_go"):
@@ -122,6 +124,39 @@ def render():
             st.image(out["imgs"][n], use_container_width=True)
             st.download_button(f"⬇️ {n}.png", out["imgs"][n], file_name=f"{n}.png", mime="image/png",
                                key=f"rep_img_{n}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  OÙ INVESTISSENT LES MEILLEURS GÉRANTS (v5.11) — section reprise dans chaque rapport PDF
+# ══════════════════════════════════════════════════════════════════════════════
+def _smart_money_section():
+    from components import smart_money_ui as UI
+    from utils import smart_money as SM
+    section_title("ACTUELLEMENT : OÙ INVESTISSENT LES MEILLEURS GÉRANTS", "🐋")
+    snap = UI.current()
+    if not snap:
+        st.caption("Top 5 des secteurs et des actifs des meilleurs gérants (formulaires 13F de la SEC), repris dans les "
+                   "rapports PDF du comité, mensuel et détaillé.")
+        if st.button("📡 Charger les 13F des gérants de référence", key="rep_sm_load"):
+            with st.status("Téléchargement des 13F (SEC EDGAR)…", expanded=False) as stat:
+                snap = SM.build_snapshot(SM.DEFAULT_CODES, progress=lambda m: stat.write(m))
+                if snap["managers"]:
+                    SM.save_snapshot(snap)
+                    st.session_state["sm_snap"] = snap
+                    stat.update(label="Données chargées", state="complete")
+                else:
+                    stat.update(label="SEC injoignable : réessayez ou importez un fichier dans 🐋 Tracking Best AM",
+                                state="error")
+                    snap = None
+        if not snap:
+            UI.platforms_box(6)
+            return
+    periods = sorted({m.get("period") for m in snap["managers"].values() if m.get("period")})
+    st.caption(f"{len(snap['managers'])} gérants · trimestre {', '.join(periods[-1:]) or '—'} · relevé du "
+               f"{snap.get('built_at')} — section incluse dans les PDF ci-dessus et ci-dessous. Détails : 🐋 Tracking Best AM.")
+    UI.top5_cards(snap, list(snap["managers"]))
+    with st.expander("🔗 Plateformes à regarder"):
+        UI.platforms_box()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

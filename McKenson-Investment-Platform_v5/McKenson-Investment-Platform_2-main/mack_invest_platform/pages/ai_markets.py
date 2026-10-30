@@ -56,17 +56,20 @@ def render():
     ])
     _regime_crosscheck(cur)
 
-    tabs = st.tabs(["🌍 RÉGIME & MACRO", "🛰️ GÉOPOLITIQUE & ACTUALITÉS", "🤖 SIGNAUX ML",
+    tabs = st.tabs(["🧑‍⚖️ ANALYSE DU COMITÉ", "🌍 RÉGIME & MACRO", "🛰️ GÉOPOLITIQUE & ACTUALITÉS", "🤖 SIGNAUX ML",
                     "💡 CONSEILS PORTEFEUILLE", "🔬 MODÈLE & VALIDATION"])
-    with tabs[0]:
-        _tab_regime(intel, reg)
+    with tabs[0]:   # v5.11 : analyse complète du marché (facteurs, secteurs, actualités, réseaux sociaux)
+        from components.market_committee_ui import render as _committee_market
+        _committee_market(news)
     with tabs[1]:
-        _tab_news(news)
+        _tab_regime(intel, reg)
     with tabs[2]:
-        _tab_signals(intel, sig)
+        _tab_news(news)
     with tabs[3]:
-        _tab_advice(intel, news, sig, reg)
+        _tab_signals(intel, sig)
     with tabs[4]:
+        _tab_advice(intel, news, sig, reg)
+    with tabs[5]:
         _tab_model(val)
 
 

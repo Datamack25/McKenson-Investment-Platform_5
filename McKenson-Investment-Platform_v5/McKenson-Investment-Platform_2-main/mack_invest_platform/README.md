@@ -1,13 +1,65 @@
-📈 McKenson Investment Platform - MIP — version 5.10.0
+📈 McKenson Investment Platform - MIP — version 5.11.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.10.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.11.0 (octobre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.11 — Tracking Best AM, comparaison avec les meilleurs gérants, analyse complète du marché
+
+🐋 **Tracking Best AM** (nouvel onglet) : où et comment investissent les meilleurs gérants, à partir de leurs formulaires
+**13F** téléchargés directement auprès de la **SEC (EDGAR)** — la source officielle de Dataroma, WhaleWisdom ou TIKR.
+41 gérants préconfigurés (Buffett, Ackman, Klarman, Li Lu, Druckenmiller, Tepper, Burry, Dalio, Coatue, Tiger, Viking,
+Renaissance, Norges Bank, Amundi…) en 5 styles, ou n'importe quel gérant par son n° CIK ; trimestre aligné sur la majorité ;
+mouvements du trimestre (nouvelles, renforcées, allégées, soldées) ; tickers (SEC + OpenFIGI) et secteurs (GICS simplifié,
+code SIC) mis en cache (data/smart_money/). Import CSV / Excel (export Dataroma, WhaleWisdom…) si la SEC est injoignable.
+- 🔥 Consensus & mouvements : top 5 secteurs / actifs / achats / ventes, titres les plus partagés (score), carte partage ×
+  conviction, évolution depuis la fin du trimestre (effet du délai de 45 jours), les 4 filtres de la méthode 13F
+  (convictions ≥ 5 %, achats groupés, nouvelles entrées dans le top 10, fortes hausses de poids) ;
+- 📋 Détenus · vendus · équivalents : **les actifs les plus détenus** (nombre de gérants, poids moyen, poids max, part de
+  la valeur, **détenu depuis** quel trimestre, plus ancien détenteur) et **les plus vendus** (vendeurs, soldé / allégé par
+  qui, **part des actions vendues**, montant vendu estimé, **ventes depuis** quel trimestre), grâce à l'historique de 2 à 8
+  trimestres par gérant ; pour chaque actif, **comment investir dans le même actif** : achat direct (compte-titres) et
+  équivalents ETF sectoriels US, UCITS et PEA ;
+- 🧺 **Les actifs des gérants alimentent les CSV de MIP** : `data/assets_best_am.csv` (même format que `assets.csv`, plus
+  secteur, gérants, poids, mouvements, équivalents) est écrit à chaque chargement et fusionné automatiquement dans tout MIP ;
+  nouvel univers **« 🐋 Best AM »** dans le Trading Desk (actifs des gérants + ETF sectoriels UCITS équivalents). Sur
+  Streamlit Cloud, télécharger le fichier et le déposer dans `data/` du dépôt pour le rendre permanent ;
+- 🏛️ Gérants : concentration, rotation, secteur dominant, options déclarées, zoom par gérant (avec « détenu depuis ») ;
+- 🏭 Secteurs : allocation moyenne et pondérée, flux du trimestre, carte de chaleur gérants × secteurs, allocation par style,
+  zoom sur un secteur ;
+- ⚖️ Mon portefeuille vs gérants : un ou plusieurs portefeuilles (ou le fichier importé) face à la moyenne des gérants, à un
+  gérant ou à un style ; ETF décomposés par secteur ; recouvrement, part active ; **pourquoi ces différences** (ce que les
+  13F ne montrent pas, actions hors US, ETF, écarts sectoriels expliqués par les flux des gérants et le régime officiel du
+  comité, concentration vs plafond par ligne de votre profil) ; **pistes du comité à valider** (enregistrées dans le
+  journal du portefeuille, aucun ordre passé) ;
+- 🧠 Analyse du comité : lecture des investissements des gérants par chacun des six membres + synthèse en mots simples ;
+- 📄 Rapports : rapport complet PDF (graphiques, carte de chaleur, consensus, analyse, comparaison), **rapport d'analyse
+  sectorielle** (un ou plusieurs secteurs), export Excel ;
+- 🔗 Plateformes & méthode : Dataroma, WhaleWisdom, TIKR, SEC EDGAR, HedgeFollow, 13f.info, GuruFocus, OpenInsider, AMF BDIF.
+
+📥 **Conseil portefeuille → sous-onglet « 🐋 Comparer aux meilleurs gérants »** : votre portefeuille actuel, plusieurs
+portefeuilles au choix ou le fichier importé, comparés aux allocations des meilleurs gérants.
+
+📄 **Rapports** : section « Où investissent actuellement les meilleurs gérants » (top 5 secteurs, top 5 actifs, plateformes à
+regarder) sur la page Rapports et dans les PDF du comité, mensuel et détaillé, ainsi que dans l'e-mail du lundi (le job
+hebdomadaire télécharge les 13F une fois par exécution).
+
+🧑‍⚖️ **IA Marchés → « Analyse du comité »** : « le Nasdaq est négatif : pourquoi, quel impact, comment s'adapter ? ». Pour 12
+marchés (Nasdaq 100, S&P 500, Dow, Russell 2000, CAC 40, Euro Stoxx 50, DAX, Nikkei, émergents, or, pétrole, bitcoin) et 4
+horizons : décomposition du mouvement par facteur (régression ridge sur 2 ans : taux 10 ans, dollar, VIX, pétrole, crédit,
+euro, yen, Wall Street), part propre au marché, ampleur inhabituelle (z-score), tendance et RSI, rotation sectorielle, grandes
+capitalisations, actualités Google News, **réseaux sociaux** (Reddit : r/wallstreetbets, r/stocks, r/investing,
+r/StockMarket ; StockTwits : messages haussiers / baissiers, titres les plus cités), impact sur le portefeuille choisi (bêta,
+lignes les plus touchées), pistes d'adaptation, avis de chaque membre du comité, rédaction facultative par LLM (secret
+`[llm]`), rapport PDF.
+
+Secrets facultatifs : `[sec] user_agent = "Votre Nom votre@adresse.com"` (recommandé par la SEC), `[openfigi] api_key`.
+Tests : 131 (python -m pytest -q).
 
 Nouveautés v5.10 — Logo MAM et plusieurs destinataires
 
@@ -369,4 +421,4 @@ password = "VotreMotDePasseAdmin"
 Teams
 Bears 🐻 | Bulls 🐂 | Whales 🐋 | Raptors 🦅 | Sharpas 🦈 | Strikers ⚡ | Wolves 🐺
 
-© 2026 Mackenson CINEUS — McKenson Asset Management — v5.10.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.
+© 2026 Mackenson CINEUS — McKenson Asset Management — v5.11.0 — plateforme de simulation pédagogique. Ne constitue pas un conseil en investissement ; l'auteur n'est pas responsable des décisions prises.

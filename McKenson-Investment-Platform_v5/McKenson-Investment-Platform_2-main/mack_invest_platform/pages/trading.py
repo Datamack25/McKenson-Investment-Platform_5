@@ -49,6 +49,7 @@ UNIVERSES = {
     "🛢️ Matières premières": ["Commodity", "Commodities", "Futures"],
     "💱 Devises & indices": ["Forex", "Index"],
     "🔌 Thèmes": "THEMES",          # paniers thématiques / chaînes de valeur (utils/themes.py)
+    "🐋 Best AM": "BEST_AM",        # v5.11 : actifs détenus par les meilleurs gérants (13F) + ETF équivalents
 }
 
 
@@ -249,6 +250,14 @@ def _spot_desk(port, state, team_id, port_id, assets_df, port_type="Libre"):
                                    format_func=lambda n: f"{THEMES[n]['emoji']} {n}")
             st.caption(THEMES[th_name]["idee"] + f" Risque commun : {THEMES[th_name]['risque_commun']}.")
             df_u = assets_df[assets_df["ticker"].isin(theme_universe(th_name))]
+        elif cats == "BEST_AM":
+            from utils.smart_money import best_am_tickers
+            df_u = assets_df[assets_df["ticker"].isin(best_am_tickers())]
+            if df_u.empty:
+                st.caption("Aucun actif « Best AM » : chargez les 13F dans l'onglet 🐋 Tracking Best AM.")
+            else:
+                st.caption("Actifs détenus par les meilleurs gérants (13F) et ETF équivalents (US, UCITS). Chaque ordre "
+                           "reste contrôlé par votre profil et la conformité ; vérifiez la valorisation avant d'acheter.")
         else:
             df_u = assets_df if not cats or "category" not in assets_df.columns \
                 else assets_df[assets_df["category"].isin(cats)]

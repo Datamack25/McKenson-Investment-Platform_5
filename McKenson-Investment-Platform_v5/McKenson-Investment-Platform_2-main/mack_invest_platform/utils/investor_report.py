@@ -218,6 +218,11 @@ def build(port: dict, period: str | None = None, bench_name: str = "S&P 500", re
         nxt.append(PS.strip_md(x))
     b.append(("bullets", nxt or ["Aucune décision particulière à prendre : le portefeuille suit sa politique."]))
 
+    try:   # v5.11 : où investissent actuellement les meilleurs gérants (13F)
+        from utils import smart_money as SM
+        b += SM.report_blocks(SM.current_snapshot())
+    except Exception:
+        pass
     b.append(("h", "8. Petit lexique"))
     b.append(("table", [["Terme", "En clair"]] + [[k, v] for k, v in GLOSSARY], [4.2, 13.2]))
     b.append(("note", "Membres du comité : personnages fictifs. " + L.DISCLAIMER))

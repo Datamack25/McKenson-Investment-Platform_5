@@ -279,7 +279,33 @@ def render():
         '<div style="font-family:Share Tech Mono;font-size:.74rem;color:#94a3b8;margin:4px 0 10px">Importez un '
         'portefeuille (CSV ou Excel) : le comité MAM l\'analyse selon votre profil, votre objectif et le contexte de '
         'marché, propose une réallocation optimisée, des scénarios, les secteurs et régions porteurs, puis vous '
-        'téléchargez l\'analyse (Excel, CSV ou image). Aucun ordre n\'est passé.</div>', unsafe_allow_html=True)
+        'téléchargez l\'analyse (Excel, CSV ou image). Comparez aussi vos portefeuilles aux allocations des meilleurs '
+        'gérants. Aucun ordre n\'est passé.</div>', unsafe_allow_html=True)
+    t1, t2 = st.tabs(["📥 ANALYSE D'UN FICHIER", "🐋 COMPARER AUX MEILLEURS GÉRANTS"])
+    with t1:
+        _render_file()
+    with t2:
+        _render_best_am()
+
+
+def _render_best_am():
+    """v5.11 : mon portefeuille actuel (ou plusieurs, ou le fichier importé) face aux meilleurs gérants (13F)."""
+    from components import smart_money_ui as UI
+    from pages.smart_money import _imported
+    st.caption("Comparez votre portefeuille actuel, plusieurs portefeuilles au choix ou le fichier importé à l'allocation "
+               "des meilleurs gérants : écarts par secteur, titres en commun, raisons des différences et pistes du comité "
+               "(à valider). L'analyse complète (consensus, secteurs, rapports) est dans l'onglet 🐋 Tracking Best AM.")
+    UI.limits_box()
+    snap, codes = UI.loader("upa_sm", compact=True)
+    if not snap:
+        st.info("Chargez d'abord les 13F des gérants (bouton 📡 ci-dessus).")
+        return
+    with st.expander("🔥 Actuellement : top 5 des secteurs et des actifs des meilleurs gérants", expanded=False):
+        UI.top5_cards(snap, codes)
+    UI.render_comparison(snap, codes, "upa_cmp", _imported())
+
+
+def _render_file():
     ips, src = _profile_block()
     _format_block()
     section_title("③ IMPORTER ET ANALYSER", "📥")

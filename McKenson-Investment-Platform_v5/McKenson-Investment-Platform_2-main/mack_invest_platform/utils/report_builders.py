@@ -349,6 +349,11 @@ def portfolio_pdf(ctx: dict) -> bytes:
                          f"{float(t.get('qty', 0)):,.4f}", f"{float(t.get('price', 0)):,.2f}",
                          f"{float(t.get('total', 0)):,.0f}"])
         blocks.append(("table", rows, None))
+    try:   # v5.11 : où investissent actuellement les meilleurs gérants (13F) + plateformes à regarder
+        from utils import smart_money as SM
+        blocks += SM.report_blocks(SM.current_snapshot())
+    except Exception:
+        pass
     blocks.append(("note", DISCLAIMER))
     return R.make_pdf(f"Rapport de portefeuille — {port.get('name', '')}",
                       f"Généré le {R.stamp()}", blocks)

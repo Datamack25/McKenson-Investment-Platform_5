@@ -333,6 +333,11 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
                [[t, str(r["Classe"]), f"{r['Poids']:.1%}",
                  _pct(r.get("Part du risque")) if "Part du risque" in lines else "—"] for t, r in lines.iterrows()],
                [3.5, 6.0, 3.0, 4.5])]
+    try:   # v5.11 : où investissent actuellement les meilleurs gérants (13F)
+        from utils import smart_money as SM
+        b += SM.report_blocks(SM.current_snapshot())
+    except Exception:
+        pass
     from utils.investor_report import METHOD_NOTE
     b.append(("note", METHOD_NOTE))
     b.append(("note", "Les membres du comité (Jean-Michel TAUX-BAS, Mc Henson ALGO-RITHME, Thierry BALANCEMENT, Aline DE MARGE, "
@@ -346,6 +351,14 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
 # ══════════════════════════════════════════════════════════════════════════════
 #  E-MAIL (corps HTML)
 # ══════════════════════════════════════════════════════════════════════════════
+def _smart_html() -> str:
+    try:
+        from utils import smart_money as SM
+        return SM.report_html(SM.current_snapshot(), dark=True)
+    except Exception:
+        return ""
+
+
 def committee_email_html(rev: dict, name: str) -> str:
     import html
     vcol = VOTE_COL[rev["verdict"]]
@@ -371,6 +384,7 @@ def committee_email_html(rev: dict, name: str) -> str:
  <div style="color:#ff8c00;font-weight:700;margin:14px 0 4px">Synthèse et recommandations — Marc ETING-FINANCIER</div>
  <ul style="color:#cbd5e1;font-size:13px;margin:0">{recos}</ul>
  {f'<div style="color:#00d4ff;font-weight:700;margin:14px 0 4px">À vous de décider</div><ul style="color:#cbd5e1;font-size:13px;margin:0">{dec}</ul>' if dec else ''}
+ {_smart_html()}
  <p style="color:#cbd5e1;font-size:13px">Le rapport complet est en pièces jointes (PNG une page + PDF détaillé).</p>
  {L.html_footer()}
  <p style="color:#475569;font-size:10px">Membres du comité : personnages fictifs.</p>
