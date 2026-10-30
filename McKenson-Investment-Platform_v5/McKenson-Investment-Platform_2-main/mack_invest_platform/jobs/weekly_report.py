@@ -212,6 +212,13 @@ def main():
         committee_ctx = dict(px=px, missing=missing, news=news, news_sim=news_sim, macro=macro, cov=cov,
                              data_sim=data_sim, vix=(macro.indicators or {}).get("vix"))
         followed = [s for s in subs if s["weekly"] and s["email"]]
+        if followed:   # v5.11 : section « où investissent les meilleurs gérants » des rapports (13F, une fois par job)
+            try:
+                from utils import smart_money as SM
+                if not SM.load_cached_snapshot(30):
+                    SM.save_snapshot(SM.build_snapshot(SM.DEFAULT_CODES, progress=log))
+            except Exception as e:
+                log(f"Relevé 13F des gérants indisponible : {e}")
         for s in followed:
             try:
                 committee_job(s["email"], s["user_key"], s["portfolio_name"], s["profile"], s["holdings"],
