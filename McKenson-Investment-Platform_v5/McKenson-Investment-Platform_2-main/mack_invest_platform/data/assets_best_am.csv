@@ -1,0 +1,187 @@
+ticker,name,category,contract_mult,currency,source,secteur,gerants,detenu_par,poids_moyen_gerants,mouvement,plus_vendu,equivalent_etf_us,equivalent_etf_ucits,equivalent_etf_pea,periode
+GOOGL,Alphabet Inc,Equity,100,USD,Best AM (13F),Communication & médias,11,"Berkshire Hathaway, Coatue Management, Dodge & Cox, Duquesne Family Office, Fundsmith, Himalaya Capital, Lone Pine Capital, Pershing Square, TCI Fund Management, Third Point, Tiger Global",0.04207,"3 nouv., 4 renf., 3 all., 1 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+AMZN,Amazon Com Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,9,"Appaloosa, Baupost Group, Coatue Management, Dodge & Cox, Duquesne Family Office, Pershing Square, Third Point, Tiger Global, Viking Global",0.05112,"0 nouv., 7 renf., 2 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+TSM,Taiwan Semiconductor Manufac,Equity,100,USD,Best AM (13F),Technologie,9,"Appaloosa, Coatue Management, Dodge & Cox, Duquesne Family Office, Fundsmith, Lone Pine Capital, Third Point, Tiger Global, Viking Global",0.03076,"1 nouv., 4 renf., 4 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+GOOG,Alphabet Inc,Equity,100,USD,Best AM (13F),Communication & médias,8,"Appaloosa, Baupost Group, Berkshire Hathaway, Coatue Management, Dodge & Cox, Himalaya Capital, Pershing Square, TCI Fund Management",0.03405,"0 nouv., 4 renf., 3 all., 0 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+V,Visa Inc,Equity,100,USD,Best AM (13F),Finance,8,"Akre Capital, Baupost Group, Dodge & Cox, Fundsmith, Lone Pine Capital, TCI Fund Management, Tiger Global, Viking Global",0.02845,"1 nouv., 2 renf., 2 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+META,Meta Platforms Inc,Equity,100,USD,Best AM (13F),Communication & médias,7,"Appaloosa, Coatue Management, Dodge & Cox, Fundsmith, Pershing Square, Tiger Global, Viking Global",0.02188,"0 nouv., 3 renf., 3 all., 1 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+MSFT,Microsoft Corp,Equity,100,USD,Best AM (13F),Technologie,6,"Coatue Management, Dodge & Cox, Fundsmith, Pershing Square, Tiger Global, Viking Global",0.01841,"1 nouv., 2 renf., 3 all., 2 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+SE,"Sea, Ltd.",Equity,100,USD,Best AM (13F),Industrie,5,"Dodge & Cox, Duquesne Family Office, Lone Pine Capital, Tiger Global, Viking Global",0.0058,"2 nouv., 1 renf., 1 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+SPCX,Space Exploration Techn Corp,Equity,100,USD,Best AM (13F),Technologie,5,"Appaloosa, Coatue Management, Third Point, Tiger Global, Viking Global",0.00534,"5 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+BN,Brookfield Corp,Equity,100,USD,Best AM (13F),Finance,4,"Akre Capital, Dodge & Cox, Lone Pine Capital, Pershing Square",0.01831,"0 nouv., 1 renf., 3 all., 0 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+UBER,Uber Technologies Inc,Equity,100,USD,Best AM (13F),Industrie,4,"Appaloosa, Fundsmith, Pershing Square, Tiger Global",0.01745,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+MCO,Moodys Corp,Equity,100,USD,Best AM (13F),Finance,4,"Akre Capital, Berkshire Hathaway, Dodge & Cox, TCI Fund Management",0.01644,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+LRCX,Lam Research Corp,Equity,100,USD,Best AM (13F),Technologie,4,"Appaloosa, Coatue Management, Duquesne Family Office, Tiger Global",0.01049,"1 nouv., 0 renf., 2 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+NVDA,Nvidia Corp.,Equity,100,USD,Best AM (13F),Technologie,4,"Appaloosa, Coatue Management, Dodge & Cox, Tiger Global",0.00995,"0 nouv., 1 renf., 2 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+GEV,Ge Vernova Inc,Equity,100,USD,Best AM (13F),Industrie,4,"Coatue Management, Dodge & Cox, Fundsmith, Tiger Global",0.00856,"1 nouv., 0 renf., 2 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+ASML,Asml Hldg Nv,Equity,100,USD,Best AM (13F),Technologie,4,"Appaloosa, Coatue Management, Lone Pine Capital, Third Point",0.00672,"0 nouv., 1 renf., 2 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+HUT,Hut 8 Corp,Equity,100,USD,Best AM (13F),Finance,4,"Coatue Management, Duquesne Family Office, Lone Pine Capital, Third Point",0.00655,"2 nouv., 1 renf., 1 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+UNP,Union Pac Corp,Equity,100,USD,Best AM (13F),Industrie,4,"Baupost Group, Dodge & Cox, Third Point, Viking Global",0.00602,"1 nouv., 1 renf., 1 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+AVGO,"Broadcom, Inc.",Equity,100,USD,Best AM (13F),Technologie,4,"Appaloosa, Coatue Management, Dodge & Cox, Tiger Global",0.00504,"1 nouv., 1 renf., 1 all., 2 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+CVNA,Carvana Co,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,4,"Coatue Management, Duquesne Family Office, Lone Pine Capital, Viking Global",0.00451,"1 nouv., 3 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+COF,Capital One Finl Corp,Equity,100,USD,Best AM (13F),Finance,4,"Berkshire Hathaway, Dodge & Cox, Third Point, Viking Global",0.00309,"0 nouv., 2 renf., 2 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+AMD,Advanced Micro Devices Inc,Equity,100,USD,Best AM (13F),Technologie,4,"Appaloosa, Coatue Management, Duquesne Family Office, Tiger Global",0.00266,"3 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+RDDT,Reddit Inc,Equity,100,USD,Best AM (13F),Communication & médias,4,"Coatue Management, Duquesne Family Office, Tiger Global, Viking Global",0.00239,"1 nouv., 0 renf., 1 all., 0 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+DHR,Danaher Corp.,Equity,100,USD,Best AM (13F),Santé,4,"Dodge & Cox, Duquesne Family Office, Third Point, Tiger Global",0.00176,"2 nouv., 2 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+AAPL,Apple Inc,Equity,100,USD,Best AM (13F),Technologie,3,"Berkshire Hathaway, Dodge & Cox, Himalaya Capital",0.01432,"0 nouv., 0 renf., 0 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+NTRA,Natera Inc,Equity,100,USD,Best AM (13F),Santé,3,"Coatue Management, Duquesne Family Office, Viking Global",0.01348,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+AMAT,Applied Matls Inc,Equity,100,USD,Best AM (13F),Technologie,3,"Coatue Management, Lone Pine Capital, Tiger Global",0.01033,"1 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+BRK-B,Berkshire Hathaway Inc Del,Equity,100,USD,Best AM (13F),Finance,3,"Akre Capital, Dodge & Cox, Himalaya Capital",0.00941,"0 nouv., 1 renf., 1 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+STX,Seagate Technology Hldngs Pl,Equity,100,USD,Best AM (13F),Technologie,3,"Duquesne Family Office, Lone Pine Capital, Tiger Global",0.00609,"2 nouv., 1 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+APP,Applovin Corp,Equity,100,USD,Best AM (13F),Technologie,3,"Coatue Management, Fundsmith, Lone Pine Capital",0.00447,"1 nouv., 0 renf., 2 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+AON,Aon Plc,Equity,100,USD,Best AM (13F),Finance,3,"Baupost Group, Dodge & Cox, Viking Global",0.00424,"0 nouv., 2 renf., 1 all., 0 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+HD,"The Home Depot, Inc.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,3,"Dodge & Cox, Lone Pine Capital, Viking Global",0.00409,"1 nouv., 1 renf., 0 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+MTZ,Mastec Inc,Equity,100,USD,Best AM (13F),Industrie,3,"Coatue Management, Lone Pine Capital, Third Point",0.00404,"0 nouv., 0 renf., 3 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+LIN,Linde Plc,Equity,100,USD,Best AM (13F),Matériaux,3,"Dodge & Cox, Duquesne Family Office, Lone Pine Capital",0.00362,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLB,IUMS.L,EWLD.PA,2026-06-30
+NU,Nu Hldgs Ltd,Equity,100,USD,Best AM (13F),Finance,3,"Coatue Management, Lone Pine Capital, Tiger Global",0.0033,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+CPNG,"Coupang, Inc.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,3,"Dodge & Cox, Duquesne Family Office, Tiger Global",0.00273,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+CB,Chubb Limited,Equity,100,USD,Best AM (13F),Finance,3,"Berkshire Hathaway, Dodge & Cox, Viking Global",0.00267,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+TMO,"Thermo Fisher Scientific, Inc.",Equity,100,USD,Best AM (13F),Santé,3,"Dodge & Cox, Duquesne Family Office, Viking Global",0.00237,"1 nouv., 2 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+BIDU,"Baidu, Inc.",Equity,100,USD,Best AM (13F),Technologie,3,"Appaloosa, Dodge & Cox, Duquesne Family Office",0.00138,"1 nouv., 1 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+QCOM,Qualcomm Inc,Equity,100,USD,Best AM (13F),Technologie,3,"Appaloosa, Coatue Management, Viking Global",0.00121,"1 nouv., 0 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+HTZ,Hertz Global Hldgs Inc,Equity,100,USD,Best AM (13F),Non classé,3,"Coatue Management, Pershing Square, Third Point",0.00038,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+MOH,Molina Healthcare Inc,Equity,100,USD,Best AM (13F),Finance,2,"Baupost Group, Scion Asset Management",0.02361,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+GE,Ge Aerospace,Equity,100,USD,Best AM (13F),Industrie,2,"Dodge & Cox, TCI Fund Management",0.02107,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+MA,Mastercard Incorporated,Equity,100,USD,Best AM (13F),Finance,2,"Akre Capital, Fundsmith",0.01544,"1 nouv., 0 renf., 1 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+MU,Micron Technology Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Appaloosa, Coatue Management",0.01408,"0 nouv., 1 renf., 1 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+PDD,Pdd Holdings Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Dodge & Cox, Himalaya Capital",0.01397,"0 nouv., 1 renf., 0 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+QSR,Restaurant Brands Intl Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Baupost Group, Pershing Square",0.01328,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+BRKR,Bruker Corp,Equity,100,USD,Best AM (13F),Technologie,2,"Scion Asset Management, Viking Global",0.01215,"2 nouv., 0 renf., 0 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+AXP,American Express Co,Equity,100,USD,Best AM (13F),Finance,2,"Berkshire Hathaway, Dodge & Cox",0.01074,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+KO,Coca Cola Co,Equity,100,USD,Best AM (13F),Consommation de base,2,"Berkshire Hathaway, Dodge & Cox",0.00679,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+SPGI,"S&P Global, Inc.",Equity,100,USD,Best AM (13F),Finance,2,"Dodge & Cox, TCI Fund Management",0.00679,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+KKR,Kkr & Co L P Del,Equity,100,USD,Best AM (13F),Finance,2,"Akre Capital, Dodge & Cox",0.00584,"1 nouv., 0 renf., 1 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+BAC,Bank Of Amer Corp,Equity,100,USD,Best AM (13F),Finance,2,"Berkshire Hathaway, Dodge & Cox",0.00579,"0 nouv., 0 renf., 2 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+ELV,Elevance Health Inc Formerly,Equity,100,USD,Best AM (13F),Santé,2,"Baupost Group, Dodge & Cox",0.00569,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+ROP,Roper Technologies Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Akre Capital, Dodge & Cox",0.00565,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+FICO,Fair Isaac Corp,Equity,100,USD,Best AM (13F),Industrie,2,"Akre Capital, Fundsmith",0.00539,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+WAT,Waters Corp,Equity,100,USD,Best AM (13F),Technologie,2,"Fundsmith, Viking Global",0.00502,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+SCHW,The Charles Schwab Corp.,Equity,100,USD,Best AM (13F),Finance,2,"Dodge & Cox, Viking Global",0.00407,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+CRS,Carpenter Technology Corp,Equity,100,USD,Best AM (13F),Matériaux,2,"Lone Pine Capital, Third Point",0.00405,"0 nouv., 0 renf., 2 all., 0 sold.",Oui,XLB,IUMS.L,EWLD.PA,2026-06-30
+OXY,Occidental Pete Corp,Equity,100,USD,Best AM (13F),Énergie,2,"Berkshire Hathaway, Dodge & Cox",0.00384,"0 nouv., 0 renf., 0 all., 1 sold.",Oui,XLE,IUES.L,EWLD.PA,2026-06-30
+GPC,Genuine Parts Co,Equity,100,USD,Best AM (13F),Industrie,2,"Baupost Group, Dodge & Cox",0.00383,"0 nouv., 1 renf., 1 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+JCI,Johnson Controls International Plc,Equity,100,USD,Best AM (13F),Industrie,2,"Dodge & Cox, Viking Global",0.00376,"0 nouv., 0 renf., 2 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+INTC,Intel Corp,Equity,100,USD,Best AM (13F),Technologie,2,"Coatue Management, Tiger Global",0.00372,"1 nouv., 1 renf., 0 all., 1 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+CBRS,Cerebras Systems Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Coatue Management, Tiger Global",0.00372,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+XYZ,Block Inc,Equity,100,USD,Best AM (13F),Finance,2,"Third Point, Tiger Global",0.00352,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+PFGC,Performance Food Group Co,Equity,100,USD,Best AM (13F),Consommation de base,2,"Lone Pine Capital, Third Point",0.00352,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+MDLN,Medline Inc,Equity,100,USD,Best AM (13F),Santé,2,"Lone Pine Capital, Viking Global",0.0035,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+APD,"Air Products & Chemicals, Inc.",Equity,100,USD,Best AM (13F),Matériaux,2,"Dodge & Cox, Viking Global",0.00338,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLB,IUMS.L,EWLD.PA,2026-06-30
+TTMI,Ttm Technologies Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Lone Pine Capital, Third Point",0.00323,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+FTV,Fortive Corp.,Equity,100,USD,Best AM (13F),Technologie,2,"Dodge & Cox, Viking Global",0.00305,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+CVX,Chevron Corporation,Equity,100,USD,Best AM (13F),Énergie,2,"Berkshire Hathaway, Dodge & Cox",0.00293,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLE,IUES.L,EWLD.PA,2026-06-30
+LYV,"Live Nation Entertainment, Inc.",Equity,100,USD,Best AM (13F),Communication & médias,2,"Dodge & Cox, Third Point",0.0028,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLC,CSPX.L,PANX.PA,2026-06-30
+NSC,Norfolk Southern Corp.,Equity,100,USD,Best AM (13F),Industrie,2,"Dodge & Cox, Third Point",0.0028,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+PG,Procter & Gamble Co,Equity,100,USD,Best AM (13F),Consommation de base,2,"Dodge & Cox, Fundsmith",0.00274,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLP,IUCS.L,EWLD.PA,2026-06-30
+NFLX,Netflix Inc.,Equity,100,USD,Best AM (13F),Communication & médias,2,"Coatue Management, Fundsmith",0.00272,"1 nouv., 0 renf., 1 all., 1 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+BA,Boeing Co,Equity,100,USD,Best AM (13F),Industrie,2,"Appaloosa, Viking Global",0.00271,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+GLW,"Corning, Inc.",Equity,100,USD,Best AM (13F),Matériaux,2,"Dodge & Cox, Lone Pine Capital",0.00267,"0 nouv., 0 renf., 2 all., 1 sold.",Oui,XLB,IUMS.L,EWLD.PA,2026-06-30
+SHW,Sherwin Williams Co,Equity,100,USD,Best AM (13F),Matériaux,2,"Tiger Global, Viking Global",0.00261,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLB,IUMS.L,EWLD.PA,2026-06-30
+ORLY,Oreilly Automotive Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Akre Capital, Fundsmith",0.00251,"1 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+PM,Philip Morris Intl Inc,Equity,100,USD,Best AM (13F),Consommation de base,2,"Dodge & Cox, Fundsmith",0.00241,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLP,IUCS.L,EWLD.PA,2026-06-30
+FOXA,Fox Corp.,Equity,100,USD,Best AM (13F),Communication & médias,2,"Dodge & Cox, Duquesne Family Office",0.00238,"2 nouv., 1 renf., 0 all., 0 sold.",Non,XLC,CSPX.L,PANX.PA,2026-06-30
+CVS,Cvs Health Corp.,Equity,100,USD,Best AM (13F),Santé,2,"Dodge & Cox, Viking Global",0.00237,"1 nouv., 0 renf., 1 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+USFD,Us Foods Hldg Corp,Equity,100,USD,Best AM (13F),Consommation de base,2,"Lone Pine Capital, Viking Global",0.00224,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+SPOT,Spotify Technology S A,Equity,100,USD,Best AM (13F),Communication & médias,2,"Coatue Management, Tiger Global",0.00218,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+EQIX,Equinix Inc,Equity,100,USD,Best AM (13F),Immobilier,2,"Coatue Management, Duquesne Family Office",0.00198,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLRE,CSPX.L,EWLD.PA,2026-06-30
+CCC,Ccc Intelligent Solutions Hl,Equity,100,USD,Best AM (13F),Technologie,2,"Akre Capital, Duquesne Family Office",0.00197,"1 nouv., 0 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+FDX,Fedex Corp.,Equity,100,USD,Best AM (13F),Industrie,2,"Dodge & Cox, Viking Global",0.00194,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+DAL,Delta Air Lines Inc,Equity,100,USD,Best AM (13F),Industrie,2,"Berkshire Hathaway, Duquesne Family Office",0.00193,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+BABA,"Alibaba Group Holding, Ltd.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Appaloosa, Dodge & Cox",0.00192,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+NAMS,Newamsterdam Pharma Company,Equity,100,USD,Best AM (13F),Santé,2,"Duquesne Family Office, Viking Global",0.00175,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+NOW,Servicenow Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Akre Capital, Tiger Global",0.00174,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+TBBB,"Bbb Foods, Inc.",Equity,100,USD,Best AM (13F),Consommation de base,2,"Dodge & Cox, Duquesne Family Office",0.00174,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+LPLA,"Lpl Financial Holdings, Inc.",Equity,100,USD,Best AM (13F),Finance,2,"Dodge & Cox, Lone Pine Capital",0.00173,"0 nouv., 1 renf., 1 all., 0 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+JPM,Jpmorgan Chase & Co.,Equity,100,USD,Best AM (13F),Finance,2,"Dodge & Cox, Viking Global",0.0017,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+CME,Cme Group Inc,Equity,100,USD,Best AM (13F),Finance,2,"Baupost Group, Viking Global",0.00164,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+TTWO,Take-Two Interactive Softwar,Equity,100,USD,Best AM (13F),Communication & médias,2,"Tiger Global, Viking Global",0.0016,"1 nouv., 0 renf., 1 all., 0 sold.",Non,XLC,CSPX.L,PANX.PA,2026-06-30
+UNH,"Unitedhealth Group, Inc.",Equity,100,USD,Best AM (13F),Santé,2,"Dodge & Cox, Tiger Global",0.00156,"0 nouv., 0 renf., 2 all., 2 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+TDG,Transdigm Group Inc,Equity,100,USD,Best AM (13F),Industrie,2,"Lone Pine Capital, Third Point",0.00156,"0 nouv., 1 renf., 1 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+MCD,Mcdonald'S Corp.,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Dodge & Cox, Viking Global",0.00136,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+BTDR,Bitdeer Technologies Group,Equity,100,USD,Best AM (13F),Finance,2,"Duquesne Family Office, Lone Pine Capital",0.00135,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+MSCI,Msci Inc,Equity,100,USD,Best AM (13F),Finance,2,"Fundsmith, Viking Global",0.0013,"1 nouv., 0 renf., 1 all., 1 sold.",Oui,XLF,IUFS.L,EWLD.PA,2026-06-30
+DIS,The Walt Disney Co.,Equity,100,USD,Best AM (13F),Communication & médias,2,"Dodge & Cox, Viking Global",0.00124,"0 nouv., 0 renf., 2 all., 0 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+AGX,Argan Inc,Equity,100,USD,Best AM (13F),Industrie,2,"Coatue Management, Lone Pine Capital",0.00116,"1 nouv., 0 renf., 1 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+LBTYA,Liberty Global Ltd,Equity,100,USD,Best AM (13F),Communication & médias,2,"Baupost Group, Dodge & Cox",0.00109,"0 nouv., 1 renf., 1 all., 1 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+BMRN,"Biomarin Pharmaceutical, Inc.",Equity,100,USD,Best AM (13F),Santé,2,"Dodge & Cox, Viking Global",0.00105,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+FDXF,"Fedex Freight Holding Co., Inc.",Equity,100,USD,Best AM (13F),Non classé,2,"Dodge & Cox, Viking Global",0.00099,"2 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+IBKR,Interactive Brokers Group In,Equity,100,USD,Best AM (13F),Finance,2,"Lone Pine Capital, Viking Global",0.00094,"1 nouv., 1 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+VMC,Vulcan Materials Co.,Equity,100,USD,Best AM (13F),Matériaux,2,"Dodge & Cox, TCI Fund Management",0.00086,"1 nouv., 0 renf., 0 all., 1 sold.",Oui,XLB,IUMS.L,EWLD.PA,2026-06-30
+UBS,Ubs Group Ag,Equity,100,USD,Best AM (13F),Finance,2,"Dodge & Cox, Viking Global",0.00076,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+CAI,Caris Life Sciences Inc,Equity,100,USD,Best AM (13F),Santé,2,"Coatue Management, Duquesne Family Office",0.00071,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+DHI,D R Horton Inc,Equity,100,USD,Best AM (13F),Non classé,2,"Berkshire Hathaway, Duquesne Family Office",0.0007,"2 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+MELI,"Mercadolibre, Inc.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Dodge & Cox, Tiger Global",0.00068,"0 nouv., 1 renf., 0 all., 2 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+FCNCA,"First Citizens Bancshares, Inc.",Equity,100,USD,Best AM (13F),Non classé,2,"Coatue Management, Dodge & Cox",0.00065,"0 nouv., 1 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+VRSN,Verisign Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Berkshire Hathaway, Fundsmith",0.00054,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+TSLA,Tesla Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Coatue Management, Viking Global",0.00044,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+VRT,Vertiv Holdings Co,Equity,100,USD,Best AM (13F),Industrie,2,"Coatue Management, Fundsmith",0.00041,"0 nouv., 0 renf., 2 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+ADMA,Adma Biologics Inc,Equity,100,USD,Best AM (13F),Santé,2,"Duquesne Family Office, Fundsmith",0.0004,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+Q,"Qnity Electronics, Inc.",Equity,100,USD,Best AM (13F),Technologie,2,"Dodge & Cox, Duquesne Family Office",0.00029,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+LLY,Eli Lilly & Co.,Equity,100,USD,Best AM (13F),Santé,2,"Dodge & Cox, Duquesne Family Office",0.00023,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+SNPS,"Synopsys, Inc.",Equity,100,USD,Best AM (13F),Technologie,2,"Coatue Management, Dodge & Cox",0.00018,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLK,IUIT.L,PANX.PA,2026-06-30
+AUR,Aurora Innovation Inc,Equity,100,USD,Best AM (13F),Technologie,2,"Duquesne Family Office, Third Point",0.00016,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+DASH,Doordash Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Coatue Management, Tiger Global",0.00014,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+JD,"Jd.Com, Inc.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,2,"Dodge & Cox, Tiger Global",0.00012,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+JBS,Jbs Nv,Equity,100,USD,Best AM (13F),Consommation de base,2,"Dodge & Cox, Duquesne Family Office",0.00011,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+APLD,Applied Digital Corp,Equity,100,USD,Best AM (13F),Technologie,2,"Third Point, Tiger Global",0.0001,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+NUE,Nucor Corp,Equity,100,USD,Best AM (13F),Matériaux,2,"Berkshire Hathaway, Dodge & Cox",9e-05,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLB,IUMS.L,EWLD.PA,2026-06-30
+CORZ,Core Scientific Inc New,Equity,100,USD,Best AM (13F),Finance,2,"Third Point, Tiger Global",7e-05,"2 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+LULU,Lululemon Athletica Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Scion Asset Management,0.01632,"0 nouv., 1 renf., 0 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+SLM,Slm Corp,Equity,100,USD,Best AM (13F),Finance,1,Scion Asset Management,0.01219,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+EWBC,East West Bancorp Inc,Equity,100,USD,Best AM (13F),Finance,1,Himalaya Capital,0.00605,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+HHH,Howard Hughes Holdings Inc,Equity,100,USD,Best AM (13F),Immobilier,1,Pershing Square,0.00543,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLRE,CSPX.L,EWLD.PA,2026-06-30
+CP,Canadian Pacific Kansas City,Equity,100,USD,Best AM (13F),Industrie,1,TCI Fund Management,0.00465,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+NBIS,Nebius Group N.V.,Equity,100,USD,Best AM (13F),Technologie,1,Lone Pine Capital,0.00449,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+MAR,Marriott Intl Inc New,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Fundsmith,0.00439,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+SYK,Stryker Corporation,Equity,100,USD,Best AM (13F),Santé,1,Fundsmith,0.0042,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+EWY,Ishares Inc,ETF,100,USD,Best AM (13F),ETF & fonds indiciels,1,Appaloosa,0.0041,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+CSGP,Costar Group Inc,Equity,100,USD,Best AM (13F),Immobilier,1,Akre Capital,0.00405,"0 nouv., 1 renf., 0 all., 1 sold.",Oui,XLRE,CSPX.L,EWLD.PA,2026-06-30
+FERG,Ferguson Enterprises Inc,Equity,100,USD,Best AM (13F),Industrie,1,Baupost Group,0.00397,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+STM,Stmicroelectronics N V,Equity,100,USD,Best AM (13F),Technologie,1,Duquesne Family Office,0.00334,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+TDS,Telephone & Data Sys Inc,Equity,100,USD,Best AM (13F),Communication & médias,1,Third Point,0.00313,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLC,CSPX.L,PANX.PA,2026-06-30
+VST,Vistra Corp,Equity,100,USD,Best AM (13F),Services publics,1,Appaloosa,0.00294,"0 nouv., 1 renf., 0 all., 1 sold.",Oui,XLU,IUUS.L,EWLD.PA,2026-06-30
+CHD,Church & Dwight Co Inc,Equity,100,USD,Best AM (13F),Consommation de base,1,Fundsmith,0.00286,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+CPRT,Copart Inc,Equity,100,USD,Best AM (13F),Industrie,1,Akre Capital,0.00276,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+KEYS,Keysight Technologies Inc,Equity,100,USD,Best AM (13F),Technologie,1,Third Point,0.00276,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+TER,Teradyne Inc,Equity,100,USD,Best AM (13F),Technologie,1,Lone Pine Capital,0.00276,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+ETN,Eaton Corp Plc,Equity,100,USD,Best AM (13F),Industrie,1,Coatue Management,0.00272,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+SGI,Somnigroup International Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Third Point,0.00271,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+ADP,Automatic Data Processing In,Equity,100,USD,Best AM (13F),Industrie,1,Fundsmith,0.00267,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+WCC,Wesco Intl Inc,Equity,100,USD,Best AM (13F),Non classé,1,Baupost Group,0.00264,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,SPY,CSPX.L,EWLD.PA,2026-06-30
+FTNT,Fortinet Inc,Equity,100,USD,Best AM (13F),Technologie,1,Fundsmith,0.00255,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+IDXX,Idexx Labs Inc,Equity,100,USD,Best AM (13F),Non classé,1,Fundsmith,0.00246,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,SPY,CSPX.L,EWLD.PA,2026-06-30
+TXN,Texas Instrs Inc,Equity,100,USD,Best AM (13F),Technologie,1,Fundsmith,0.00246,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+WULF,Terawulf Inc,Equity,100,USD,Best AM (13F),Finance,1,Lone Pine Capital,0.00228,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+FLEX,Flex Ltd,Equity,100,USD,Best AM (13F),Technologie,1,Third Point,0.00225,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+RTX,Rtx Corp.,Equity,100,USD,Best AM (13F),Industrie,1,Dodge & Cox,0.00218,"0 nouv., 0 renf., 0 all., 1 sold.",Oui,XLI,IUIS.L,EWLD.PA,2026-06-30
+INSM,Insmed Inc,Equity,100,USD,Best AM (13F),Santé,1,Duquesne Family Office,0.00218,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+NRG,Nrg Energy Inc,Equity,100,USD,Best AM (13F),Services publics,1,Appaloosa,0.00215,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLU,IUUS.L,EWLD.PA,2026-06-30
+ABNB,Airbnb Inc,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Akre Capital,0.00207,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+TFX,Teleflex Incorporated,Equity,100,USD,Best AM (13F),Santé,1,Baupost Group,0.00206,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+YPF,Ypf Sociedad Anonima,Equity,100,USD,Best AM (13F),Énergie,1,Duquesne Family Office,0.00205,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLE,IUES.L,EWLD.PA,2026-06-30
+STRL,Sterling Infrastructure Inc,Equity,100,USD,Best AM (13F),Industrie,1,Lone Pine Capital,0.00196,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+NCLH,Norwegian Cruise Line Hldgs,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Baupost Group,0.00188,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+CPAY,Corpay Inc,Equity,100,USD,Best AM (13F),Industrie,1,Tiger Global,0.00187,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+CROX,Crocs Inc,Equity,100,USD,Best AM (13F),Matériaux,1,Himalaya Capital,0.00181,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLB,IUMS.L,EWLD.PA,2026-06-30
+FER,Ferrovial Nv,Equity,100,USD,Best AM (13F),Industrie,1,TCI Fund Management,0.0017,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+EWZ,Ishares Inc,ETF,100,USD,Best AM (13F),ETF & fonds indiciels,1,Duquesne Family Office,0.0017,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+LII,Lennox Intl Inc,Equity,100,USD,Best AM (13F),Non classé,1,Viking Global,0.00162,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+KHC,Kraft Heinz Co,Equity,100,USD,Best AM (13F),Consommation de base,1,Berkshire Hathaway,0.00161,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLP,IUCS.L,EWLD.PA,2026-06-30
+UAL,United Airls Hldgs Inc,Equity,100,USD,Best AM (13F),Industrie,1,Duquesne Family Office,0.00155,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+CDW,Cdw Corp,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Duquesne Family Office,0.0015,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+BKNG,"Booking Holdings, Inc.",Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Dodge & Cox,0.00149,"0 nouv., 1 renf., 0 all., 1 sold.",Oui,XLY,IUCD.L,EWLD.PA,2026-06-30
+RACE,Ferrari N V,Equity,100,USD,Best AM (13F),Consommation discrétionnaire,1,Viking Global,0.00146,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLY,IUCD.L,EWLD.PA,2026-06-30
+HUM,"Humana, Inc.",Equity,100,USD,Best AM (13F),Santé,1,Dodge & Cox,0.00142,"0 nouv., 0 renf., 1 all., 1 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+HLF,Herbalife Ltd,Equity,100,USD,Best AM (13F),Santé,1,Baupost Group,0.00141,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+CRM,Salesforce Inc,Equity,100,USD,Best AM (13F),Technologie,1,Akre Capital,0.00138,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLK,IUIT.L,PANX.PA,2026-06-30
+DVA,Davita Inc,Equity,100,USD,Best AM (13F),Santé,1,Berkshire Hathaway,0.00134,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLV,IUHC.L,EWLD.PA,2026-06-30
+MET,"Metlife, Inc.",Equity,100,USD,Best AM (13F),Finance,1,Dodge & Cox,0.00134,"0 nouv., 0 renf., 1 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
+SUNB,"Sunbelt Rentals Holdings, Inc.",Equity,100,USD,Best AM (13F),Industrie,1,Dodge & Cox,0.00134,"0 nouv., 1 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+CNI,Canadian Natl Ry Co,Equity,100,USD,Best AM (13F),Non classé,1,TCI Fund Management,0.00133,"0 nouv., 0 renf., 1 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+BBIO,Bridgebio Pharma Inc,Equity,100,USD,Best AM (13F),Santé,1,Viking Global,0.00132,"0 nouv., 0 renf., 1 all., 0 sold.",Oui,XLV,IUHC.L,EWLD.PA,2026-06-30
+AAL,American Airlines Group Inc,Equity,100,USD,Best AM (13F),Industrie,1,Appaloosa,0.00113,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLI,IUIS.L,EWLD.PA,2026-06-30
+TME,Tencent Music Entertainm,Equity,100,USD,Best AM (13F),Communication & médias,1,Himalaya Capital,0.00093,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLC,CSPX.L,PANX.PA,2026-06-30
+MLM,Martin Marietta Matls Inc,Equity,100,USD,Best AM (13F),Matériaux,1,TCI Fund Management,0.0009,"1 nouv., 0 renf., 0 all., 0 sold.",Non,XLB,IUMS.L,EWLD.PA,2026-06-30
+SIRI,Siriusxm Holdings Inc,Equity,100,USD,Best AM (13F),Non classé,1,Berkshire Hathaway,0.00077,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+SEG,Seaport Entmt Group Inc,Equity,100,USD,Best AM (13F),Non classé,1,Pershing Square,0.00049,"0 nouv., 0 renf., 0 all., 0 sold.",Non,SPY,CSPX.L,EWLD.PA,2026-06-30
+GSHD,Goosehead Ins Inc,Equity,100,USD,Best AM (13F),Finance,1,Akre Capital,0.00026,"0 nouv., 0 renf., 0 all., 0 sold.",Non,XLF,IUFS.L,EWLD.PA,2026-06-30
