@@ -179,11 +179,13 @@ def main():
             lvl = SEV_MIN.get(s["min_severity"] or "important", 2)
             mine = [a for a in new_alerts if a["rang"] >= lvl and (
                 a["categorie"] != "Portefeuille" or a["titre"].startswith(s["portfolio_name"] + " ·"))]
-            recipients.setdefault(s["email"], {})
-            for a in mine:
-                recipients[s["email"]][a["id"]] = a
-        if not subs and os.environ.get("REPORT_TO"):
-            recipients[os.environ["REPORT_TO"]] = {a["id"]: a for a in new_alerts if a["rang"] >= 2}
+            for addr in AL.parse_recipients(s["email"]):        # v5.10 : plusieurs adresses par abonnement
+                recipients.setdefault(addr, {})
+                for a in mine:
+                    recipients[addr][a["id"]] = a
+        if not subs:
+            for addr in AL.parse_recipients(os.environ.get("REPORT_TO")):
+                recipients[addr] = {a["id"]: a for a in new_alerts if a["rang"] >= 2}
         sent_ids = set()
         for email, amap in recipients.items():
             if not amap:

@@ -74,12 +74,10 @@ WEB_CSS = """
 }
 .mam-brand { display: flex; align-items: center; gap: 12px; }
 .mam-logo {
-    width: 40px; height: 40px; border-radius: 9px; display: flex; align-items: center;
-    justify-content: center; font-family: Rajdhani, sans-serif; font-weight: 700;
-    font-size: 1.35rem; color: #080e1a;
-    background: linear-gradient(135deg, #00ff88, #00d4ff);
-    box-shadow: 0 0 22px rgba(0,255,136,.35);
+    width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;
+    filter: drop-shadow(0 0 12px rgba(0,255,136,.30));
 }
+.mam-logo svg { width: 46px; height: 46px; display: block; }
 .mam-brand-name {
     font-family: Rajdhani, sans-serif; font-weight: 700; font-size: 1.7rem; line-height: 1;
     letter-spacing: .22em; color: #00ff88; text-shadow: 0 0 24px rgba(0,255,136,.45);
@@ -243,11 +241,16 @@ def render_topbar():
         pass
     user = st.session_state.get("mam_user")
     uname = _html.escape(user["username"]) if user else "invité"
+    try:  # v5.10 : logo MAM (SVG intégré)
+        from utils.brand import mark_svg_inline
+        logo = mark_svg_inline(46) or "M"
+    except Exception:
+        logo = "M"
     st.markdown(
         f"""
 <div class="mam-topbar">
   <div class="mam-brand">
-    <div class="mam-logo">M</div>
+    <div class="mam-logo">{logo}</div>
     <div><div class="mam-brand-name">MAM</div>
          <div class="mam-brand-sub">McKenson Asset Management</div></div>
   </div>

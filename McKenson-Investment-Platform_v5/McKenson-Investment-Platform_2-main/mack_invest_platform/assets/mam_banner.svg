@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1424"/><stop offset="1" stop-color="#161034"/>
+    </linearGradient>
+    <linearGradient id="m" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d4ff"/><stop offset="1" stop-color="#00ff88"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <g transform="translate(70,60) scale(0.55)">
+    <rect width="512" height="512" rx="112" fill="#0d1830" stroke="#00d4ff" stroke-opacity=".3" stroke-width="4"/>
+    <polyline points="104,368 104,170 196,290 256,214 316,290 392,140" fill="none" stroke="url(#m)"
+              stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon points="420,104 418,184 350,148" fill="#00ff88"/>
+    <g fill="#00d4ff">
+      <rect x="160" y="352" width="22" height="34" rx="4" opacity=".55"/><rect x="200" y="336" width="22" height="50" rx="4" opacity=".7"/>
+      <rect x="240" y="318" width="22" height="68" rx="4" opacity=".85"/><rect x="280" y="296" width="22" height="90" rx="4"/>
+    </g>
+  </g>
+  <text x="400" y="190" font-family="Rajdhani, 'Segoe UI', Arial, sans-serif" font-weight="700" font-size="110"
+        letter-spacing="18" fill="#e2e8f0">MAM</text>
+  <text x="404" y="250" font-family="Rajdhani, 'Segoe UI', Arial, sans-serif" font-weight="600" font-size="34"
+        letter-spacing="4" fill="#00d4ff">McKENSON ASSET MANAGEMENT</text>
+  <text x="404" y="300" font-family="'Share Tech Mono', 'Courier New', monospace" font-size="24"
+        fill="#7a93b0">Investment Platform · simulation pédagogique</text>
+</svg>
