@@ -1,13 +1,46 @@
-📈 McKenson Investment Platform - MIP — version 5.12.0
+📈 McKenson Investment Platform - MIP — version 5.13.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.12.0 (novembre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.13.0 (novembre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.13 — Processus de gestion d'actifs
+
+Le comité suit désormais un processus d'investissement en boucle, comme une société de gestion : politique
+d'investissement → allocation et limites → budget de risque → mise en œuvre → suivi et revue.
+
+🧪 **Stress des scénarios sur le portefeuille** : chaque ligne est ventilée par secteur / actif (indices et ETF répartis
+selon leur composition), l'impact de chaque scénario est appliqué → gain ou perte attendu en % et en $, espérance pondérée,
+ligne la plus touchée, et comparaison à la **perte maximale acceptée de l'IPS** (alerte si le pire scénario la dépasse).
+
+🗓️ **Plan d'action par phases** (Analyse Marché, rapports PDF, e-mail de grosse perte) : « cette semaine » (ramener le
+risque sous la limite, corriger la couverture, liquidités minimales), « ce mois-ci, par paliers » (plafonds États-Unis /
+tech-IA, concentration, investissement progressif des liquidités), « chaque trimestre » (rééquilibrage par bande, roulement
+des options, révision des catalyseurs, revue de l'IPS). Chaque action : montant, lignes, raison, membre du comité. Rien
+n'est exécuté automatiquement.
+
+🧊 **Lignes figées** (Admin → Paramètres financiers) : lignes que vous ne voulez pas toucher, pour tous les portefeuilles ou
+un seul. Le comité n'y propose ni vente ni achat mais tient compte de leur exposition pour ajuster le reste.
+
+🔎 **Autocritique du comité** : Marc ETING-FINANCIER note l'analyse sur 10 (qualité des données, pouvoir explicatif du
+modèle, couverture du sentiment, hypothèses non revues, lignes non classées, couverture incohérente…) et liste les
+améliorations. **Processus d'investissement** : état de chaque étape (✅ / ⚠️) dans l'écran et les rapports.
+
+🛡️ **Gouvernance des données** : tous les téléchargements de cours passent par `utils/prices.py` (extraction robuste
+des formats yfinance, suppression des séances « fantômes » avant toute recopie), ce qui supprime aussi les faux
+rendements nuls dans les calculs de volatilité, de corrélation et de performance. Nouveaux paramètres : liquidités
+minimales, nombre de paliers, bande de rééquilibrage, et tous les seuils du processus (probabilité baissière qui
+déclenche la couverture, marge de liquidités avant d'investir, échéance minimale et roulement des options, critères et
+notes de l'autocritique). Nouvel onglet admin **🧩 Compositions** : ventilation sectorielle du S&P 500 et du Nasdaq 100
+utilisée par le stress des scénarios (totaux contrôlés à 100 %). Le cœur compte désormais 46 paramètres bornés.
+
+📘 **`CLAUDE.md`** à la racine : règles du projet (données, paramètres, textes, comité, livraison) pour que chaque
+session de développement reparte des mêmes conventions.
 
 Nouveautés v5.12 — Analyse Marché : scénarios probabilisés, cœur paramétrable, fin des faux « 0,0 % »
 
@@ -31,7 +64,7 @@ trop hors de la monnaie, mauvais sous-jacent, échéance).
 comité (PDF + e-mail) intègre l'analyse de marché, les scénarios, la remédiation et le diagnostic des couvertures.
 
 🧮 **Admin → « Paramètres financiers »** : le cœur garde ses valeurs par défaut, l'administrateur peut surcharger
-33 ratios et seuils (bornés), la méthode de volatilité, la formule du score de scénario (évaluation sécurisée), les
+36 ratios et seuils (bornés), la méthode de volatilité, la formule du score de scénario (évaluation sécurisée), les
 scénarios (probabilités a priori ou forcées, impacts par secteur, remédiation), les catalyseurs et ses plafonds
 personnels ; historique des modifications, export / import JSON, retour aux valeurs par défaut. Stockage en base
 (table hedge_fund_state), mention dans les rapports quand des paramètres personnalisés sont actifs.

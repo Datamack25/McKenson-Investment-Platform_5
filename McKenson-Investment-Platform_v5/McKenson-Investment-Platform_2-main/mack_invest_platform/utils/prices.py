@@ -65,6 +65,15 @@ def extract_closes(raw: pd.DataFrame | None, tickers: list[str] | tuple) -> pd.D
     return px.dropna(how="all")
 
 
+def drop_sparse_rows(px: pd.DataFrame, min_share: float = 0.5) -> pd.DataFrame:
+    """Retire les lignes où moins de `min_share` des actifs ont coté (week-end porté par le bitcoin, matinée où
+    seuls le pétrole et le dollar cotent…) AVANT un éventuel ffill : sinon ces lignes recopient la veille et
+    créent de faux rendements nuls (volatilité et corrélations sous-estimées)."""
+    if px is None or px.empty or px.shape[1] < 3:
+        return px
+    return px[px.notna().mean(axis=1) >= min_share]
+
+
 def download_closes(tickers, period: str = "2y", interval: str = "1d", retries: int = 2) -> tuple[pd.DataFrame, list[str]]:
     """Téléchargement Yahoo avec nouvelles tentatives. Renvoie (clôtures SANS recopie, tickers manquants)."""
     tickers = sorted({str(t) for t in tickers if t})

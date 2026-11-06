@@ -84,6 +84,40 @@ PARAMS: dict[str, dict] = {
                             default=1.0, min=0.0, max=1.0, step=0.05, kind="pct"),
     "plafond_ligne": dict(group="Préférences du gérant", label="Plafond par ligne (concentration)", default=0.20,
                           min=0.02, max=1.0, step=0.01, kind="pct"),
+    "liquidites_min": dict(group="Préférences du gérant", label="Liquidités minimales à conserver", default=0.03,
+                           min=0.0, max=0.50, step=0.01, kind="pct"),
+    "paliers": dict(group="Préférences du gérant", label="Nombre de paliers pour investir / alléger", default=4,
+                    min=1, max=12, step=1, kind="int"),
+    "bande_reequilibrage": dict(group="Préférences du gérant", label="Bande de rééquilibrage (écart toléré à la cible)",
+                                default=0.05, min=0.01, max=0.25, step=0.01, kind="pct"),
+    # ── Processus de gestion et autocritique (v5.13) ──
+    "proba_baisse_couverture": dict(group="Processus & autocritique",
+                                    label="Probabilité baissière qui déclenche la correction de couverture (plan)",
+                                    default=0.30, min=0.05, max=0.90, step=0.05, kind="pct"),
+    "proba_baisse_alerte": dict(group="Processus & autocritique",
+                                label="Probabilité baissière qui déclenche l'alerte « compléter la protection »",
+                                default=0.35, min=0.05, max=0.90, step=0.05, kind="pct"),
+    "marge_cash_deploiement": dict(group="Processus & autocritique",
+                                   label="Liquidités au-delà du minimum avant de proposer d'investir", default=0.05,
+                                   min=0.0, max=0.50, step=0.01, kind="pct"),
+    "option_jours_min": dict(group="Processus & autocritique", label="Option jugée trop proche de l'échéance (jours)",
+                             default=10, min=1, max=90, step=1, kind="int"),
+    "option_jours_roulement": dict(group="Processus & autocritique", label="Rouler les options sous (jours restants)",
+                                   default=30, min=5, max=120, step=5, kind="int"),
+    "critique_r2_min": dict(group="Processus & autocritique",
+                            label="Autocritique — R² minimal du modèle de facteurs", default=0.30, min=0.0, max=0.9,
+                            step=0.05, kind="pct"),
+    "critique_messages_min": dict(group="Processus & autocritique",
+                                  label="Autocritique — messages minimum pour un sentiment fiable", default=5, min=0,
+                                  max=200, step=1, kind="int"),
+    "critique_proba_min": dict(group="Processus & autocritique",
+                               label="Autocritique — probabilité du scénario principal jugée tranchée", default=0.45,
+                               min=0.34, max=0.90, step=0.01, kind="pct"),
+    "critique_note_solide": dict(group="Processus & autocritique", label="Autocritique — note « analyse solide »",
+                                 default=8.0, min=5.0, max=10.0, step=0.5, kind="float"),
+    "critique_note_prudence": dict(group="Processus & autocritique",
+                                   label="Autocritique — note « utilisable avec prudence »", default=6.0, min=1.0,
+                                   max=9.5, step=0.5, kind="float"),
     # ── Scénarios ──
     "sc_sensibilite": dict(group="Scénarios", label="Sensibilité des probabilités au score (k)", default=0.55,
                            min=0.0, max=2.0, step=0.05, kind="float"),
@@ -186,7 +220,7 @@ TTL = 120
 
 
 def _empty() -> dict:
-    return dict(values={}, formulas={}, scenarios=None, catalysts=None, history=[], revisions=[])
+    return dict(values={}, formulas={}, scenarios=None, catalysts=None, frozen=[], history=[], revisions=[])
 
 
 def _load() -> dict:
@@ -298,6 +332,10 @@ def custom_keys() -> list[str]:
         keys.append("scénarios")
     if st_.get("catalysts"):
         keys.append("catalyseurs")
+    if st_.get("frozen"):
+        keys.append("lignes figées")
+    if st_.get("compositions"):
+        keys.append("compositions des indices")
     return keys
 
 
@@ -321,6 +359,71 @@ def custom_note() -> str | None:
     st_ = _load()
     return ("Paramètres personnalisés par l'administrateur (jugement d'expert, "
             f"{st_.get('date', '')}) : " + " ; ".join(labels) + (" …" if len(keys) > 8 else "") + ".")
+
+
+COMPOSITION_KEYS = {"sp500": "S&P 500 (et ETF US larges)", "nasdaq100": "Nasdaq 100 (QQQ…)"}
+
+
+def compositions() -> dict[str, dict]:
+    """Ventilation sectorielle des indices utilisée par le stress des scénarios (surcharge admin possible)."""
+    from utils import am_process as AM
+    base = {"sp500": dict(AM._SP500), "nasdaq100": dict(AM._NDX)}
+    o = _load().get("compositions") or {}
+    for k in base:
+        if isinstance(o.get(k), dict) and o[k]:
+            base[k] = {s: float(v) for s, v in o[k].items() if _num(v) is not None and float(v) > 0}
+    return base
+
+
+def set_compositions(comp: dict, who: str = "admin") -> tuple[bool, list[str]]:
+    errs, clean = [], {}
+    for k, d in comp.items():
+        if k not in COMPOSITION_KEYS:
+            continue
+        d = {s: float(v) for s, v in d.items() if s in SECTORS and _num(v) is not None and float(v) > 0}
+        tot = sum(d.values())
+        if not d or abs(tot - 1) > 0.02:
+            errs.append(f"{COMPOSITION_KEYS[k]} : les poids doivent totaliser 100 % (actuellement {tot:.0%}).")
+        clean[k] = {s: v / tot for s, v in d.items()} if tot else {}
+    if errs:
+        return False, errs
+    st_ = copy.deepcopy(_load())
+    st_["history"].append(dict(date=datetime.now().strftime("%Y-%m-%d %H:%M"), qui=who, cle="compositions",
+                               libelle="Composition sectorielle des indices", avant="—", apres="modifiée"))
+    st_["compositions"] = clean
+    return _save(st_), []
+
+
+def frozen() -> list[dict]:
+    """Lignes figées : [{ticker, portefeuille ('*' = tous), raison}] — le comité ne propose ni vente ni achat
+    sur ces lignes, mais tient compte de ce qu'elles apportent (exposition, risque) pour ajuster le reste."""
+    return [dict(x) for x in (_load().get("frozen") or []) if isinstance(x, dict) and x.get("ticker")]
+
+
+def frozen_tickers(portfolio: str | None = None) -> set[str]:
+    out = set()
+    for x in frozen():
+        scope = str(x.get("portefeuille") or "*").strip()
+        if scope in ("*", "", "tous") or portfolio is None or scope.lower() == str(portfolio).lower():
+            out.add(str(x["ticker"]).upper().strip())
+    return out
+
+
+def set_frozen(rows: list[dict], who: str = "admin") -> tuple[bool, list[str]]:
+    clean = []
+    for r in rows:
+        t = str(r.get("ticker") or "").upper().strip()
+        if not t:
+            continue
+        if len(t) > 20:
+            return False, [f"Ticker invalide : {t}"]
+        clean.append(dict(ticker=t, portefeuille=str(r.get("portefeuille") or "*").strip()[:60] or "*",
+                          raison=str(r.get("raison") or "")[:200]))
+    st_ = copy.deepcopy(_load())
+    st_["history"].append(dict(date=datetime.now().strftime("%Y-%m-%d %H:%M"), qui=who, cle="lignes_figees",
+                               libelle="Lignes figées", avant=len(st_.get("frozen") or []), apres=len(clean)))
+    st_["frozen"] = clean
+    return _save(st_), []
 
 
 def history() -> list[dict]:
@@ -351,6 +454,10 @@ def _cross_checks(vals: dict) -> list[str]:
         errs.append("Le seuil de survente du RSI doit être inférieur au seuil de surachat.")
     if not g("mm_courte") < g("mm_longue"):
         errs.append("La moyenne mobile courte doit être plus courte que la longue.")
+    if not g("critique_note_prudence") < g("critique_note_solide"):
+        errs.append("Autocritique : la note « prudence » doit être inférieure à la note « solide ».")
+    if not g("option_jours_min") < g("option_jours_roulement"):
+        errs.append("Options : le seuil « trop proche de l'échéance » doit être inférieur au seuil de roulement.")
     return errs
 
 
@@ -455,6 +562,10 @@ def reset(what: str = "all", who: str = "admin") -> bool:
         st_["scenarios"] = None
     if what in ("all", "catalysts"):
         st_["catalysts"] = None
+    if what in ("all", "frozen"):
+        st_["frozen"] = []
+    if what in ("all", "compositions"):
+        st_["compositions"] = {}
     st_["history"].append(dict(date=datetime.now().strftime("%Y-%m-%d %H:%M"), qui=who, cle=f"reset:{what}",
                                libelle="Retour aux valeurs par défaut", avant="personnalisé", apres="défaut"))
     return _save(st_)
@@ -462,7 +573,8 @@ def reset(what: str = "all", who: str = "admin") -> bool:
 
 def export_json() -> str:
     st_ = _load()
-    return json.dumps({k: st_.get(k) for k in ("values", "formulas", "scenarios", "catalysts")}, ensure_ascii=False,
+    return json.dumps({k: st_.get(k) for k in ("values", "formulas", "scenarios", "catalysts", "frozen",
+                                                         "compositions")}, ensure_ascii=False,
                       indent=1, default=str)
 
 
@@ -483,6 +595,12 @@ def import_json(text: str, who: str = "admin") -> tuple[bool, list[str]]:
         errs += e
     if d.get("catalysts"):
         ok, e = set_catalysts(d["catalysts"], who)
+        errs += e
+    if d.get("frozen"):
+        ok, e = set_frozen(d["frozen"], who)
+        errs += e
+    if d.get("compositions"):
+        ok, e = set_compositions(d["compositions"], who)
         errs += e
     return not errs, errs
 

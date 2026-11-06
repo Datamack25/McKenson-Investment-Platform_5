@@ -284,8 +284,9 @@ def hedge_effectiveness(port: dict, vals: dict[str, float], hist: pd.DataFrame |
         if typ == "put" and sgn > 0 and mny < -otm_max:
             causes.append(f"Put {und} {K:g} trop hors de la monnaie ({mny:+.1%} sous le cours) : il ne protège "
                           "qu'après une baisse importante.")
-        if remaining_days(o) < 10:
-            causes.append(f"Option {und} {K:g} à moins de 10 jours de l'échéance : protection quasi épuisée.")
+        if remaining_days(o) < CP.get("option_jours_min"):
+            causes.append(f"Option {und} {K:g} à moins de {CP.get('option_jours_min')} jours de l'échéance : "
+                          "protection quasi épuisée.")
         b_und = H.bucket_of(und)
         if typ == "put" and sgn > 0 and b_und == "us" and expo.get("tech", {}).get("montant", 0) > 0.3 * max(tot_eq, 1):
             r_tech = np.nan
@@ -348,7 +349,7 @@ def remediation(probs: dict, scs: list[dict] | None = None, expo: dict | None = 
     if hedge and hedge.get("ok") and hedge.get("causes"):
         perso.append("Couvertures : " + hedge["causes"][0])
     pb = probs.get("baissier", 0)
-    if pb >= 0.35 and hedge and hedge.get("ok") and (hedge.get("n_options", 0) == 0 or
+    if pb >= CP.get("proba_baisse_alerte") and hedge and hedge.get("ok") and (hedge.get("n_options", 0) == 0 or
                                                      (hedge.get("covered_ratio") or 0) < CP.get("couverture_cible")):
         perso.append(f"Probabilité baissière {pb:.0%} : compléter la protection avant d'en avoir besoin.")
     return dict(plans=plans, perso=perso)
@@ -395,6 +396,25 @@ def build(an: dict, px: pd.DataFrame | None = None, intraday: dict | None = None
     hedge = hedge_effectiveness(port, vals or {}, hist, an.get("horizon", 5)) if port is not None and vals else None
     rem = remediation(probs, scs, expo, port_beta, hedge)
     main = max(probs, key=probs.get)
+    # v5.13 : processus de gestion — stress des scénarios sur le portefeuille, plan par phases, autocritique
+    from utils import am_process as AM
+    pscen, plan = None, None
+    if vals:
+        pm = (port or {}).get("ips", {}).get("perte_max") if port else None
+        if pm is None:
+            try:
+                from utils.committee import default_ips
+                pm = default_ips(an.get("profile", "Équilibré"))["perte_max"]
+            except Exception:
+                pm = None
+        pscen = AM.portfolio_scenarios(vals, cash, scs, probs, pm)
+        plan = AM.action_plan(vals, cash, dict(probs=probs, main=main), pscen, expo, hedge,
+                              CP.frozen_tickers((port or {}).get("name")))
+        if pscen.get("ok") and pscen["breach"]:
+            w = pscen["scen"][pscen["worst"]]
+            rem["perso"].insert(0, f"Dans le scénario {pscen['worst']}, le portefeuille perdrait environ {w['pct']:.1%} "
+                                   f"({w['pnl']:,.0f} $), au-delà de votre perte maximale acceptée "
+                                   f"({-abs(pscen['perte_max']):.0%}).".replace(",", " "))
     by_id = {s["id"]: s for s in scs}
     up = [c["signal"].lower() for c in contrib if c["contribution"] > 0.05][:3]
     dn = [c["signal"].lower() for c in contrib if c["contribution"] < -0.05][:3]
@@ -407,10 +427,13 @@ def build(an: dict, px: pd.DataFrame | None = None, intraday: dict | None = None
         if abs(db) >= 0.01:
             watch.append(f"Si « {r['catalyseur']} » se confirme, la probabilité baissière "
                          f"{'monte' if db > 0 else 'baisse'} de {abs(db) * 100:.0f} pts.")
-    return dict(ok=True, signals=sg["signals"], raw=sg["raw"], vix=sg["vix"], score=S, probs=probs,
-                scenarios=scs, catalysts=cats, sensitivity=sens, contributions=contrib, sectors=secx,
-                exposure=expo, hedge=hedge, remediation=rem, main=main, resume=resume, watch=watch,
-                custom=CP.custom_note(), built=datetime.now().strftime("%d/%m/%Y %H:%M"))
+    out = dict(ok=True, signals=sg["signals"], raw=sg["raw"], vix=sg["vix"], score=S, probs=probs,
+               scenarios=scs, catalysts=cats, sensitivity=sens, contributions=contrib, sectors=secx,
+               exposure=expo, hedge=hedge, remediation=rem, main=main, resume=resume, watch=watch,
+               portfolio=pscen, plan=plan, custom=CP.custom_note(), built=datetime.now().strftime("%d/%m/%Y %H:%M"))
+    out["critique"] = AM.self_critique(an, out)
+    out["process"] = AM.process_status(port, out)
+    return out
 
 
 def note_markdown(an: dict, sc: dict) -> str:
@@ -426,6 +449,28 @@ def note_markdown(an: dict, sc: dict) -> str:
         L += [f"- {x}" for x in sc["remediation"]["plans"].get(s["id"], [])]
     if sc["remediation"]["perso"]:
         L += ["", "## Votre portefeuille"] + [f"- {x}" for x in sc["remediation"]["perso"]]
+    ps = sc.get("portfolio") or {}
+    if ps.get("ok"):
+        L += ["", "## Stress des scénarios sur le portefeuille"]
+        for s in sc["scenarios"]:
+            v = ps["scen"][s["id"]]
+            L.append(f"- {s['nom']} : {v['pct']:+.1%} ({v['pnl']:+,.0f} $)".replace(",", " "))
+        L.append(f"- Espérance pondérée : {ps['expected']:+.1%}")
+    plan = sc.get("plan") or {}
+    if plan.get("ok"):
+        L += ["", "## Plan d'action par phases (à valider)"]
+        if plan.get("frozen_note"):
+            L.append(f"_{plan['frozen_note']}_")
+        for ph in dict.fromkeys(a["phase"] for a in plan["actions"]):
+            L.append(f"**{ph}**")
+            for a in plan["actions"]:
+                if a["phase"] == ph:
+                    m = f" — {a['montant']:,.0f} $".replace(",", " ") if a.get("montant") else ""
+                    L.append(f"- {a['action']}{m} ({a['lignes']}) : {a['pourquoi']} — {a['qui']}")
+    cr = sc.get("critique") or {}
+    if cr:
+        L += ["", f"## Autocritique du comité — {cr['note']:g}/10 ({cr['verdict']})"]
+        L += [f"- {x}" for x in cr["faiblesses"]] + [f"- À améliorer : {x}" for x in cr["ameliorations"]]
     if sc.get("custom"):
         L += ["", f"_{sc['custom']}_"]
     L += ["", "_Probabilités estimées à partir de signaux de marché et d'hypothèses : lecture éducative, pas une "
@@ -452,6 +497,7 @@ def pdf_blocks(an: dict, sc: dict) -> list[tuple]:
         b += [("p", f"**{s['nom']} ({sc['probs'][s['id']]:.0%})**"), ("bullets", sc["remediation"]["plans"].get(s["id"]) or ["—"])]
     if sc["remediation"]["perso"]:
         b += [("p", "**Constats sur votre portefeuille**"), ("bullets", sc["remediation"]["perso"])]
+    b += process_pdf_blocks(sc)
     h = sc.get("hedge")
     if h and h.get("ok"):
         b.append(("h", "Pourquoi les options n'ont pas protégé à hauteur de l'exposition"))
@@ -467,4 +513,42 @@ def pdf_blocks(an: dict, sc: dict) -> list[tuple]:
         b.append(("note", sc["custom"]))
     b.append(("note", "Probabilités : probabilités a priori déformées par un score de signaux (logit) — estimations "
                       "éducatives, pas des prévisions."))
+    return b
+
+
+def process_pdf_blocks(sc: dict) -> list[tuple]:
+    """v5.13 : stress des scénarios, plan par phases, processus d'investissement, autocritique."""
+    b: list[tuple] = []
+    ps = sc.get("portfolio") or {}
+    if ps.get("ok"):
+        b.append(("h", "Stress des scénarios sur le portefeuille"))
+        rows = [["Scénario", "Probabilité", "Variation", "Montant", "Ligne la plus touchée"]]
+        for s in sc["scenarios"]:
+            v = ps["scen"][s["id"]]
+            worst = v["contrib"][0] if v["contrib"] else ("—", 0)
+            rows.append([s["nom"].split(" — ")[0], f"{sc['probs'][s['id']]:.0%}", f"{v['pct']:+.1%}",
+                         f"{v['pnl']:+,.0f} $".replace(",", " "), f"{worst[0]} ({worst[1]:+,.0f} $)".replace(",", " ")])
+        b.append(("table", rows, [3.2, 2.4, 2.4, 3.4, 6.0]))
+        b.append(("p", f"Espérance pondérée par les probabilités : {ps['expected']:+.1%}"
+                       + (f" · perte maximale acceptée (IPS) : {-abs(ps['perte_max']):.0%}" if ps.get("perte_max") else "")
+                       + (" — **limite dépassée dans le pire scénario**" if ps.get("breach") else "")))
+    plan = sc.get("plan") or {}
+    if plan.get("ok") and plan["actions"]:
+        b.append(("h", "Plan d'action par phases (à valider — rien n'est exécuté automatiquement)"))
+        if plan.get("frozen_note"):
+            b.append(("note", plan["frozen_note"]))
+        b.append(("table", [["Phase", "Action", "Montant", "Lignes", "Pourquoi", "Qui"]] +
+                  [[a["phase"], a["action"], f"{a['montant']:,.0f} $".replace(",", " ") if a.get("montant") else "—",
+                    a["lignes"], a["pourquoi"], a["qui"]] for a in plan["actions"]],
+                  [2.4, 3.4, 1.9, 2.8, 5.4, 2.1]))
+    pr = sc.get("process") or []
+    if pr:
+        b.append(("h", "Processus d'investissement — où en est-on ?"))
+        b.append(("table", [["Étape", "État", "Détail"]] +
+                  [[r["etape"], "OK" if r["ok"] else "À traiter", r["detail"]] for r in pr], [5.6, 2.0, 9.8]))
+    cr = sc.get("critique") or {}
+    if cr:
+        b.append(("h", f"Autocritique du comité — {cr['note']:g}/10 ({cr['verdict']})"))
+        b.append(("bullets", (cr["faiblesses"] or ["Aucune faiblesse majeure relevée."])
+                  + [f"À améliorer : {x}" for x in cr["ameliorations"]]))
     return b

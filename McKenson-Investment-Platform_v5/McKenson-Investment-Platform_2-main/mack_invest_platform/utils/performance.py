@@ -64,14 +64,9 @@ def _download(tickers: tuple, start: str, adjusted: bool) -> pd.DataFrame:
         import yfinance as yf
         raw = yf.download(list(tickers), start=start, interval="1d", auto_adjust=adjusted,
                           progress=False, threads=True)
-        px = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
-        if isinstance(px, pd.Series):
-            px = px.to_frame(tickers[0])
-        if list(px.columns) == ["Close"]:
-            px.columns = [tickers[0]]
-        if px.index.tz is not None:
-            px.index = px.index.tz_localize(None)
-        return px.dropna(how="all").ffill()
+        from utils import prices as P
+        px = P.extract_closes(raw, list(tickers))          # v5.13 : extraction robuste (formats yfinance)
+        return P.drop_sparse_rows(px).ffill()
     except Exception:
         return pd.DataFrame()
 

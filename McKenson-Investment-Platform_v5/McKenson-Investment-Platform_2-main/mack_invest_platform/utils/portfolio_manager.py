@@ -148,12 +148,9 @@ def load_line_prices(tickers: tuple):
     try:
         import yfinance as yf
         raw = yf.download(list(tickers), period="2y", auto_adjust=True, progress=False, threads=True)
-        px = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
-        if isinstance(px, pd.Series):
-            px = px.to_frame(tickers[0])
-        if "Close" in px.columns and len(tickers) == 1:
-            px = px[["Close"]].rename(columns={"Close": tickers[0]})
-        px = px.dropna(how="all").ffill()
+        from utils import prices as P
+        px = P.extract_closes(raw, list(tickers))          # v5.13 : extraction robuste (formats yfinance)
+        px = P.drop_sparse_rows(px).ffill()
         ok = [t for t in tickers if t in px.columns and px[t].notna().sum() > 60]
         return px[ok], [t for t in tickers if t not in ok]
     except Exception:

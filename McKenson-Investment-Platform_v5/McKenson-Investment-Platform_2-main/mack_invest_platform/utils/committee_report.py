@@ -458,6 +458,14 @@ def _loss_html(gp: dict | None) -> str:
         h = sc.get("hedge")
         if h and h.get("ok") and h.get("causes"):
             body += f'<p style="margin:6px 0"><b>Couvertures :</b> {html.escape(h["causes"][0])}</p>'
+        urgent = [a for a in (sc.get("plan") or {}).get("actions", []) if a["phase"].startswith("1")]
+        if urgent:
+            body += ("<b>Cette semaine :</b><ul style=\"margin:4px 0\">" + "".join(
+                f"<li>{html.escape(a['action'])}" + (f" — {a['montant']:,.0f} $".replace(",", " ") if a.get("montant") else "")
+                + "</li>" for a in urgent) + "</ul>")
+        cr = sc.get("critique")
+        if cr:
+            body += f'<p style="margin:6px 0;color:#94a3b8">Autocritique du comité : {cr["note"]:g}/10 ({html.escape(cr["verdict"])})</p>'
     return (f'<div style="border:1px solid #ff3b6b;border-left:4px solid #ff3b6b;background:#1a0d14;padding:10px 14px;'
             f'margin:10px 0;color:#f1f5f9;font-size:13px"><div style="color:#ff3b6b;font-weight:700">⚠️ Grosse perte '
             f'détectée — analyse du comité</div>{body}</div>')

@@ -203,10 +203,9 @@ def load_prices(tickers: tuple = tuple(ALL_TICKERS), period: str = "2y"):
         import yfinance as yf
         raw = yf.download(list(tickers), period=period, interval="1d",
                           auto_adjust=True, progress=False, threads=True)
-        px = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
-        if isinstance(px, pd.Series):
-            px = px.to_frame(tickers[0])
-        px = px.dropna(how="all").ffill()
+        from utils import prices as P
+        px = P.extract_closes(raw, list(tickers))          # v5.13 : extraction robuste (formats yfinance)
+        px = P.drop_sparse_rows(px).ffill()                 # pas de séance « fantôme » recopiée
         ok = [t for t in tickers if t in px.columns and px[t].notna().sum() > 150]
         if len(ok) >= len(tickers) * 0.6:
             missing = [t for t in tickers if t not in ok]

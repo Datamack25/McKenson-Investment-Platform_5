@@ -191,9 +191,8 @@ def _find_portfolios(obj, path="", out=None, depth=0):
 def _last_prices(tickers: tuple) -> dict:
     try:
         import yfinance as yf
-        d = yf.download(list(tickers), period="5d", auto_adjust=True, progress=False)["Close"]
-        if isinstance(d, pd.Series):
-            d = d.to_frame(tickers[0])
+        from utils.prices import extract_closes
+        d = extract_closes(yf.download(list(tickers), period="5d", auto_adjust=True, progress=False), list(tickers))
         out = {t: float(d[t].dropna().iloc[-1]) for t in tickers if t in d and d[t].notna().any()}
         from utils.fx import usd_factors       # v5.8 : valorisation en USD
         f = usd_factors(list(out))

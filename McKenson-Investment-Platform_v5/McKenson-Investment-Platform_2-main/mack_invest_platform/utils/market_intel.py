@@ -135,12 +135,10 @@ def _download(tickers: list[str], period: str) -> pd.DataFrame:
         return pd.DataFrame()
     if raw is None or raw.empty:
         return pd.DataFrame()
-    closes = raw["Close"] if "Close" in raw else raw
-    if isinstance(closes, pd.Series):
-        closes = closes.to_frame(name=tickers[0])
-    closes = closes.copy()
-    if getattr(closes.index, "tz", None) is not None:
-        closes.index = closes.index.tz_localize(None)
+    from utils import prices as P
+    closes = P.extract_closes(raw, list(tickers)).copy()   # v5.13 : extraction robuste (formats yfinance)
+    if closes.empty:
+        return closes
     closes.index = pd.to_datetime(closes.index).normalize()
     return closes.sort_index()
 
