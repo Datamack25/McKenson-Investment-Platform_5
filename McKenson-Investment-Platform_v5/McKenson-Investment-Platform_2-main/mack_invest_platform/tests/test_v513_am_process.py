@@ -114,3 +114,36 @@ def test_admin_drives_process_thresholds_and_compositions():
     assert any("Investir les liquidités" in a["action"] for a in plan["actions"])
     CP.reset("all")
     assert AM.sector_weights("SPY")[0]["Technologie"] == pytest.approx(0.24)
+
+
+def test_live_session_detected_like_6_nov_1536():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    paris = ZoneInfo("Europe/Paris")
+    d = "2026-11-06"
+    assert P.session_status(d, "us", datetime(2026, 11, 6, 15, 36, tzinfo=paris))["live"] is True
+    assert P.session_status(d, "us", datetime(2026, 11, 6, 22, 30, tzinfo=paris))["live"] is False
+    assert P.session_status("2026-11-05", "us", datetime(2026, 11, 6, 15, 36, tzinfo=paris))["live"] is False
+    assert P.session_status(d, "eu", datetime(2026, 11, 6, 15, 36, tzinfo=paris))["live"] is True
+
+
+def test_signals_use_same_dates_as_attribution():
+    from tests.test_v512_analyse_marche import _mixed_calendar_px
+    from utils import market_drivers as MD
+    px = _mixed_calendar_px(0.013)
+    an = MD.analyse("Nasdaq 100", 1, px, [], [], [], None, "Équilibré")
+    cr_att = next(f["move"] for f in an["attribution"]["factors"] if f["key"] == "credit")
+    sg = SC.signals(an, px)
+    assert np.sign(sg["signals"]["credit"]) == np.sign(cr_att) or abs(cr_att) < 1e-6
+    assert "(" in sg["raw"]["peur"]                       # niveau ET variation du VIX affichés
+
+
+def test_portfolio_lines_by_absolute_weight():
+    from tests.test_v512_analyse_marche import _mixed_calendar_px
+    from utils import market_drivers as MD
+    px = _mixed_calendar_px(0.013)
+    pimp = dict(ok=True, beta=0.23, corr=0.5, invested=0.9, impact=0.003, betas={},
+                contrib=[("SAN.PA", -0.00001), ("USO", -0.00002), ("NVDA", 0.002)])
+    an = MD.analyse("Nasdaq 100", 1, px, [], [], [], None, "Équilibré", pimp)
+    txt = " ".join(an["impact"])
+    assert "NVDA (+20 pb)" in txt and "SAN.PA" not in txt and "-0.0%" not in txt

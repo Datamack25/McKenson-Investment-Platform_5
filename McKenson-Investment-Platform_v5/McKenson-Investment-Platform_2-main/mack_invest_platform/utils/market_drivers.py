@@ -330,7 +330,8 @@ def attribution(px: pd.DataFrame, market: str, horizon: int = 5, lookback: int |
     rows.sort(key=lambda r: -abs(r["contrib"]))
     explained = float(contrib.sum())
     start_ref = lvl.index[-horizon - 1] if len(lvl) > horizon else lvl.index[0]
-    return dict(ok=True, market=market, horizon=horizon, move=move, move_pct=float(np.expm1(move)),
+    sess = P.session_status(win.index[-1], m["region"] if m["region"] in ("us", "eu", "jp") else None)
+    return dict(ok=True, market=market, horizon=horizon, move=move, move_pct=float(np.expm1(move)), session=sess,
                 factors=rows, explained=explained, residual=move - explained, r2=r2, typical=typ,
                 z=move / typ if typ and typ == typ else np.nan, start=str(start_ref.date()), end=str(win.index[-1].date()),
                 last_close=float(lvl.iloc[-1]), ref_close=float(lvl.loc[start_ref]), n_obs=len(fit))
@@ -505,6 +506,10 @@ def adaptation(att: dict, tech: dict, regime: str | None, profile: str, social: 
     out = []
     move, z = att.get("move", 0.0), att.get("z", np.nan)
     neg = move < 0
+    if (att.get("session") or {}).get("live"):
+        out.append(dict(qui="Mc Henson ALGO-RITHME", texte="Séance en cours : le chiffre du jour est provisoire (dernier cours "
+                        "connu, ≈ 15 min de différé) et peut encore changer fortement d'ici la clôture. Les décisions se "
+                        "prennent sur des séances clôturées."))
     dom = att["factors"][0] if att.get("factors") else None
     z_n, z_f, z_x = _param("z_norme", 1.2), _param("z_fort", 2.0), _param("z_exceptionnel", 3.0)
     if z == z and abs(z) < z_n:
@@ -620,9 +625,13 @@ def analyse(market: str, horizon: int, px: pd.DataFrame, news_rows: list[dict] |
                  else " (mouvement marqué)" if abs(z) >= z_n else " (dans la norme)")
     else:
         direction, force = ("en hausse" if mv > 0 else "en baisse" if mv < 0 else "inchangé"), ""
+    live = bool((att.get("session") or {}).get("live"))
     try:
         d_end = pd.Timestamp(att["end"]).strftime("%d/%m")
-        hz = hz + (f" (séance du {d_end})" if horizon == 1 else f" (au {d_end})")
+        if live:
+            hz = hz + f" (séance du {d_end} EN COURS, non clôturée)"
+        else:
+            hz = hz + (f" (séance du {d_end})" if horizon == 1 else f" (au {d_end})")
     except Exception:
         pass
     headline = f"{market} {direction} de {mv:+.1%} {hz}{force}."
@@ -652,9 +661,11 @@ def analyse(market: str, horizon: int, px: pd.DataFrame, news_rows: list[dict] |
             txt = IMPACT_UP[f["key"]] if f["move"] > 0 else IMPACT_DOWN.get(f["key"], IMPACT_UP[f["key"]])
             impact.append(f"{f['label']} ({f['move_txt']}) — {txt}")
     if port_impact and port_impact.get("ok"):
-        worst = [f"{k} ({v:+.1%})" for k, v in port_impact["contrib"][:3]]
-        impact.append(f"Votre portefeuille : bêta {port_impact['beta']:.2f}, impact estimé {port_impact['impact']:+.1%} "
-                      f"(lignes les plus touchées : {', '.join(worst)}).")
+        top = sorted(port_impact["contrib"], key=lambda kv: -abs(kv[1]))[:3]
+        sig = [f"{k} ({v * 1e4:+.0f} pb)" for k, v in top if abs(v) >= 5e-5]
+        impact.append(f"Votre portefeuille : bêta {port_impact['beta']:.2f}, impact estimé {port_impact['impact']:+.2%} "
+                      + (f"(lignes qui pèsent le plus : {', '.join(sig)})." if sig else
+                         "(aucune ligne ne pèse plus de 0,5 pb : portefeuille peu sensible à ce marché)."))
     adapt = adaptation(att, tech, regime, profile, so, smart, port_impact)
     dom = att["factors"][0] if att["factors"] else None
     voices = [

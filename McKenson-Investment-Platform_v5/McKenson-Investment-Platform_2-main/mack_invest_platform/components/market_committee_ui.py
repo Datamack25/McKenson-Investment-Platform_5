@@ -154,7 +154,7 @@ def _show(an: dict):
     col = "#00ff88" if att["move_pct"] > 0 else "#ff3b6b"
     st.markdown(f'<div style="border:1px solid {col}66;background:{col}10;border-radius:10px;padding:12px 16px;margin:6px 0">'
                 f'<div style="font-family:Rajdhani;font-size:1.35rem;font-weight:700;color:{col}">{_h.escape(an["headline"])}</div>'
-                f'<div style="font-family:Share Tech Mono;font-size:.7rem;color:#94a3b8">clôture du {att["start"]} → clôture du {att["end"]} · '
+                f'<div style="font-family:Share Tech Mono;font-size:.7rem;color:#94a3b8">clôture du {att["start"]} → {(att.get("session") or {}).get("label", "clôture")} du {att["end"]} · '
                 f'régime officiel du comité : {_h.escape(str(an.get("regime") or "—"))} · profil {an["profile"]}</div></div>',
                 unsafe_allow_html=True)
     kpi_row([kpi("Mouvement", fmt_pct(att['move_pct'], 2), f"z = {att['z']:+.1f}" if att["z"] == att["z"] else "z indisponible", col),
@@ -397,11 +397,12 @@ def _remediation_block(sc: dict):
                     + _bullets(rem["perso"]) + "</ul></div>", unsafe_allow_html=True)
     cols = st.columns(len(sc["scenarios"]))
     for c, s in zip(cols, sc["scenarios"]):
-        with c:
-            with st.expander(f"Si {s['nom'].split(' — ')[0].lower()} ({sc['probs'][s['id']]:.0%})",
-                             expanded=s["id"] == sc["main"]):
-                for x in rem["plans"].get(s["id"], []):
-                    st.markdown(f"- {x}")
+        star = " ★" if s["id"] == sc["main"] else ""
+        c.markdown(f'<div style="border:1px solid {s.get("couleur", "#94a3b8")}44;border-radius:8px;padding:8px 10px;'
+                   f'min-height:150px"><div style="font-family:Rajdhani;font-weight:700;color:{s.get("couleur", "#94a3b8")}">'
+                   f'Si {_h.escape(s["nom"].split(" — ")[0].lower())} ({sc["probs"][s["id"]]:.0%}){star}</div>'
+                   '<ul style="padding-left:16px;margin:4px 0;font-size:.74rem">'
+                   + _bullets(rem["plans"].get(s["id"]) or ["—"]) + "</ul></div>", unsafe_allow_html=True)
 
 
 def _intraday_block(an: dict):

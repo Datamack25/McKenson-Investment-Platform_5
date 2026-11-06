@@ -75,14 +75,20 @@ def signals(an: dict, px: pd.DataFrame | None = None, intraday: dict | None = No
     rsi = tech.get("rsi", np.nan) if tech.get("ok") else np.nan
     raw["rsi"] = f"RSI {rsi:.0f}" if rsi == rsi else "—"
     sig["rsi"] = _clip((50 - rsi) / 25) if rsi == rsi else 0.0
+    fmoves = {f["key"]: f["move"] for f in att.get("factors") or []}
     vix = np.nan
     if px is not None and "^VIX" in px:
         v = P.true_closes(px["^VIX"])
+        if att.get("end"):                       # niveau du VIX à la même date que le marché analysé
+            v = v[v.index <= pd.Timestamp(att["end"])]
         vix = float(v.iloc[-1]) if len(v) else np.nan
-    raw["peur"] = f"VIX {vix:.1f}" if vix == vix else "—"
-    sig["peur"] = -_clip((vix - 20) / 10) if vix == vix else 0.0
-    cr = np.nan
-    if px is not None and "HYG" in px and "IEF" in px:
+    dv = fmoves.get("vix", np.nan)               # variation du VIX sur l'horizon (log), mêmes dates
+    raw["peur"] = (f"VIX {vix:.1f}" if vix == vix else "VIX —") + (f" ({np.expm1(dv):+.0%})" if dv == dv else "")
+    lvl_s = -_clip((vix - 20) / 10) if vix == vix else 0.0
+    chg_s = -_clip(dv / 0.10) if dv == dv else 0.0
+    sig["peur"] = 0.6 * lvl_s + 0.4 * chg_s      # niveau (stress de fond) + variation (dynamique)
+    cr = fmoves.get("credit", np.nan)            # même mesure et mêmes dates que « Pourquoi ? »
+    if cr != cr and px is not None and "HYG" in px and "IEF" in px:
         a, b = P.true_closes(px["HYG"]), P.true_closes(px["IEF"])
         j = pd.concat([a, b], axis=1, sort=True).dropna()
         h = max(1, int(an.get("horizon", 5)))
@@ -297,13 +303,22 @@ def hedge_effectiveness(port: dict, vals: dict[str, float], hist: pd.DataFrame |
             if r_tech == r_tech and r_u == r_u and abs(r_tech) > 1.3 * abs(r_u):
                 causes.append(f"Mauvais sous-jacent : la couverture est sur {und} ({r_u:+.1%}) alors que votre "
                               f"exposition tech a bougé de {r_tech:+.1%} — risque de base.")
+    n_unvalued = sum(1 for ln in lines if ln.get("Delta") != ln.get("Delta"))
+    n_long_puts = sum(1 for o in opts if str(o.get("type", "")).lower() == "put"
+                      and str(o.get("action", "BUY")).upper() == "BUY")
+    if n_unvalued:
+        causes.append(f"{n_unvalued} option(s) non valorisée(s) : cours du sous-jacent indisponible — elles ne sont pas "
+                      "comptées dans la part protégée.")
+    if opts and n_long_puts == 0:
+        causes.append("Aucun put acheté parmi vos options (calls ou ventes uniquement) : elles ne protègent pas "
+                      "contre une baisse.")
     covered_ratio = delta_notional / tot_eq if tot_eq > 0 else np.nan
     coverage_real = (hedge_gain / -loss_eq) if loss_eq < 0 else np.nan
     if not opts:
         causes.append("Aucune option vivante dans le portefeuille : aucune protection en place.")
     elif tot_eq > 0 and covered_ratio == covered_ratio and covered_ratio < target:
-        causes.append(f"Notionnel couvert insuffisant : le delta des puts protège {covered_ratio:.0%} des actions "
-                      f"(cible {target:.0%}).")
+        causes.append(f"Notionnel couvert insuffisant : le delta des puts achetés protège {covered_ratio:.0%} des "
+                      f"actions exposées ({tot_eq:,.0f} $), cible {target:.0%}.".replace(",", " "))
     if any(str(o.get("action", "")).upper() == "SELL" and str(o.get("type", "")).lower() == "put" for o in opts):
         causes.append("Des puts vendus ajoutent du risque à la baisse au lieu d'en retirer.")
     if loss_eq < 0 and coverage_real == coverage_real and coverage_real < target - gap_tol:

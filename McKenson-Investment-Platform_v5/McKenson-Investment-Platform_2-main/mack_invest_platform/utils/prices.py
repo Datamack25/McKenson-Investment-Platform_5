@@ -146,6 +146,30 @@ def log_returns(s: pd.Series | None) -> pd.Series:
     return np.log(true_closes(s)).diff().dropna()
 
 
+_SESSION = {"us": ("America/New_York", 16, 0), "eu": ("Europe/Paris", 17, 35), "jp": ("Asia/Tokyo", 15, 0)}
+
+
+def session_status(last_date, region: str | None, now: datetime | None = None) -> dict:
+    """La dernière « clôture » est-elle une séance terminée ou une séance EN COURS ?
+    Yahoo renvoie, pendant la séance, une barre quotidienne du jour avec le DERNIER cours (≈ 15 min de différé)."""
+    try:
+        from zoneinfo import ZoneInfo
+        d = pd.Timestamp(last_date).date()
+        tz, hh, mm = _SESSION.get(region or "", (None, None, None))
+        if tz is None:   # actifs cotés quasi en continu (or, pétrole, bitcoin) : la barre du jour est toujours partielle
+            loc = (now or datetime.now(ZoneInfo("Europe/Paris")))
+            loc = loc if loc.tzinfo else loc.replace(tzinfo=ZoneInfo("Europe/Paris"))
+            live = d >= loc.date()
+            return dict(live=live, label="cours en séance" if live else "clôture", tz="Europe/Paris")
+        loc = (now.astimezone(ZoneInfo(tz)) if (now and now.tzinfo) else
+               (now.replace(tzinfo=ZoneInfo("Europe/Paris")).astimezone(ZoneInfo(tz)) if now else datetime.now(ZoneInfo(tz))))
+        live = d == loc.date() and (loc.hour, loc.minute) < (hh, mm)
+        return dict(live=live, label="cours en séance" if live else "clôture", tz=tz,
+                    local=loc.strftime("%H:%M"))
+    except Exception:
+        return dict(live=False, label="clôture")
+
+
 def stale(s: pd.Series | None, max_days: int = 5, now: datetime | None = None) -> bool:
     """Vrai si la dernière clôture date de plus de `max_days` jours calendaires."""
     c = true_closes(s)
