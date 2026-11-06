@@ -241,6 +241,7 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
     # ── En bref : la performance et sa cause en mots simples (v5.6) ──
     from utils.plain_summary import pdf_blocks
     b += pdf_blocks(rev.get("synthese_simple"))
+    b += _loss_pdf_blocks(rev.get("grosse_perte"))   # v5.12 : grosse perte → analyse de marché + remédiation
 
     # ── Page 1 : synthèse (CPM) ──
     cpm = A_["cpm"]
@@ -340,6 +341,12 @@ def committee_pdf(rev: dict, name: str, nav: pd.Series | None = None, bench: pd.
         pass
     from utils.investor_report import METHOD_NOTE
     b.append(("note", METHOD_NOTE))
+    try:
+        from utils.core_params import custom_note
+        if custom_note():
+            b.append(("note", custom_note()))
+    except Exception:
+        pass
     b.append(("note", "Les membres du comité (Jean-Michel TAUX-BAS, Mc Henson ALGO-RITHME, Thierry BALANCEMENT, Aline DE MARGE, "
                       "Constance Probité, Marc ETING-FINANCIER) sont des personnages fictifs ; les citations de "
                       "vrais investisseurs illustrent le style dont chaque rôle s'inspire. "
@@ -372,7 +379,7 @@ def committee_email_html(rev: dict, name: str) -> str:
                     for r in rev.get("recommandations", [])) or "<li>Aucune action nécessaire.</li>"
     dec = "".join(f"<li>{html.escape(_plain(d))}</li>" for d in rev.get("decisions", []))
     from utils.plain_summary import html_block
-    simple = html_block(rev.get("synthese_simple"))
+    simple = html_block(rev.get("synthese_simple")) + _loss_html(rev.get("grosse_perte"))
     return f"""<html><body style="background:#080e1a;font-family:Arial,sans-serif;padding:18px">
 <div style="max-width:760px;margin:auto">
  <div style="color:#00d4ff;font-size:13px;font-weight:700;letter-spacing:2px">McKENSON ASSET MANAGEMENT · {C.COMMITTEE_NAME}</div>
@@ -389,6 +396,92 @@ def committee_email_html(rev: dict, name: str) -> str:
  {L.html_footer()}
  <p style="color:#475569;font-size:10px">Membres du comité : personnages fictifs.</p>
 </div></body></html>"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  GROSSE PERTE (v5.12) : analyse de marché du comité + scénarios + remédiation + couvertures
+# ══════════════════════════════════════════════════════════════════════════════
+def loss_analysis(port: dict, vals: dict, cash: float, nav_s: pd.Series | None, ctx: dict | None = None,
+                  px: pd.DataFrame | None = None, hist: pd.DataFrame | None = None) -> dict | None:
+    """Si le portefeuille subit une grosse perte (seuils Admin → Paramètres financiers), le rapport intègre
+    l'analyse de marché du comité, les scénarios probabilisés, les plans de remédiation et le diagnostic des
+    couvertures. `px` / `hist` peuvent être fournis (tests) ; sinon ils sont téléchargés."""
+    from utils import scenarios as SC
+    bl = SC.big_loss(nav_s)
+    if not bl.get("triggered"):
+        return None
+    out = dict(detection=bl, market=None, analyse=None, scen=None)
+    try:
+        from utils import market_drivers as MD
+        expo = SC.exposure_profile(vals, cash)
+        market = "Nasdaq 100" if expo.get("ok") and expo["tech"] >= 0.30 else "S&P 500"
+        horizon = 1 if bl["jour"] == bl["jour"] and bl["jour"] <= bl["seuils"]["jour"] else 5
+        px = px if px is not None else MD.fetch_closes(tuple(MD.needed_tickers(market)), "2y")
+        if hist is None:
+            from datetime import timedelta
+            from utils import performance as PF
+            unders = {str(o.get("ticker", "")).upper() for o in (port.get("options") or []) if o.get("ticker")}
+            need = tuple(sorted({t for t, v in vals.items() if v > 0} | unders | {"SOXX", "QQQ", "SPY"}))
+            hist = PF.price_history(need, (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d"))
+        reg = None
+        try:
+            reg = (ctx or {})["macro"].regime
+        except Exception:
+            reg = None
+        an = MD.analyse(market, horizon, px, [], [], [], reg, (port.get("ips") or {}).get("profil", "Équilibré"),
+                        port_ctx=dict(vals=vals, cash=cash, port=port, hist=hist))
+        if an.get("ok"):
+            out.update(market=market, analyse={k: an[k] for k in ("headline", "why", "impact", "adapt", "horizon", "market")},
+                       scen=an.get("scen"))
+    except Exception as e:
+        out["erreur"] = f"{type(e).__name__}"
+    return out
+
+
+def _loss_html(gp: dict | None) -> str:
+    """Encadré e-mail : grosse perte, cause probable, scénario principal et remédiation."""
+    if not gp:
+        return ""
+    import html
+    hits = "".join(f"<li>{html.escape(x)}</li>" for x in gp["detection"]["hits"])
+    an, sc = gp.get("analyse"), gp.get("scen") or {}
+    body = f'<ul style="margin:4px 0">{hits}</ul>'
+    if an:
+        body += f'<p style="margin:6px 0"><b>Marchés :</b> {html.escape(_plain(an["headline"]))}</p>'
+    if sc.get("ok"):
+        main = next(s for s in sc["scenarios"] if s["id"] == sc["main"])
+        probs = " · ".join(f"{s['nom'].split(' — ')[0]} {sc['probs'][s['id']]:.0%}" for s in sc["scenarios"])
+        plan = sc["remediation"]["perso"] + sc["remediation"]["plans"].get(sc["main"], [])
+        body += (f'<p style="margin:6px 0"><b>Scénarios :</b> {html.escape(probs)} — le comité retient « '
+                 f'{html.escape(main["nom"])} ».</p><b>Plans de remédiation proposés (à valider) :</b>'
+                 f'<ul style="margin:4px 0">' + "".join(f"<li>{html.escape(x)}</li>" for x in plan[:6]) + "</ul>")
+        h = sc.get("hedge")
+        if h and h.get("ok") and h.get("causes"):
+            body += f'<p style="margin:6px 0"><b>Couvertures :</b> {html.escape(h["causes"][0])}</p>'
+    return (f'<div style="border:1px solid #ff3b6b;border-left:4px solid #ff3b6b;background:#1a0d14;padding:10px 14px;'
+            f'margin:10px 0;color:#f1f5f9;font-size:13px"><div style="color:#ff3b6b;font-weight:700">⚠️ Grosse perte '
+            f'détectée — analyse du comité</div>{body}</div>')
+
+
+def _loss_pdf_blocks(gp: dict | None) -> list[tuple]:
+    if not gp:
+        return []
+    from utils import scenarios as SC
+    b = [("h", "⚠️ Grosse perte détectée — analyse du comité et plans de remédiation"),
+         ("bullets", [x[0].upper() + x[1:] for x in gp["detection"]["hits"]])]
+    an, sc = gp.get("analyse"), gp.get("scen") or {}
+    if an:
+        b += [("p", f"**Ce qui s'est passé sur les marchés — {an['market']}** : {_plain(an['headline'])}"),
+              ("bullets", [_plain(x) for x in an["why"][:5]])]
+        if an["impact"]:
+            b += [("p", "**Impact**"), ("bullets", [_plain(x) for x in an["impact"][:3]])]
+    if sc.get("ok"):
+        b += SC.pdf_blocks({"market": gp.get("market")}, sc)
+    elif not an:
+        b.append(("p", "Analyse de marché indisponible au moment du rapport (cours injoignables) : les plans de "
+                       "remédiation par défaut s'appliquent."))
+    b.append(("break",))
+    return b
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -428,6 +521,7 @@ def build_for_portfolio(port: dict, ctx: dict, prices_live: dict | None = None, 
         rev["synthese_simple"] = plain_summary(port, bench_name, bench=bench if len(bench) >= 2 else None)
     except Exception:
         rev["synthese_simple"] = None
+    rev["grosse_perte"] = loss_analysis(port, vals, cash, nav_s, ctx)
     name = port.get("name", "Portefeuille")
     return dict(review=rev, nav=nav_s, bench=bench, hedges=hedges, ips=ips,
                 png=committee_png(rev, name, nav_s, bench, bench_name, ctx.get("data_sim", False)),

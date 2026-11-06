@@ -1,4 +1,4 @@
-# pages/ai_markets.py  —  MAM v5 · IA Marchés
+# pages/ai_markets.py  —  MAM v5.12 · Analyse Marché (anciennement « IA Marchés »)
 """
 Intelligence de marché par machine learning : régime, macro, géopolitique,
 actualités, signaux par actif et conseils pour le portefeuille actif.
@@ -26,7 +26,7 @@ _SIG_COL = {"SURPONDÉRER": "#00ff88", "RENFORCER": "#7cf0b5", "NEUTRE": "#94a3b
 def render():
     c1, c2 = st.columns([6, 1])
     with c1:
-        page_header("🧠 IA MARCHÉS", "Machine learning · macro-économie · géopolitique · actualités → aide à la "
+        page_header("🧠 ANALYSE MARCHÉ", "Comité · scénarios probabilisés · machine learning · macro · géopolitique · actualités → aide à la "
                     "décision pour la construction de portefeuille")
     with c2:
         st.markdown("<div style='padding-top:10px'></div>", unsafe_allow_html=True)

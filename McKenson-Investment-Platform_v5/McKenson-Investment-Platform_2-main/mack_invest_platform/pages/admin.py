@@ -189,11 +189,12 @@ def render():
             "```toml\n[admin]\npassword = \"VotreMotDePasseAdmin\"\n```"
         )
 
-    (tab_users, tab_allp, tab_cmp, tab_dq, tab_teams, tab_game, tab_assets,
+    (tab_users, tab_allp, tab_cmp, tab_params, tab_dq, tab_teams, tab_game, tab_assets,
      tab_logs, tab_export, tab_danger) = st.tabs([
         "🔐 UTILISATEURS",
         "📊 TOUS LES PORTEFEUILLES",
         "🛡️ CONFORMITÉ",
+        "🧮 PARAMÈTRES FINANCIERS",
         "🩺 QUALITÉ DES DONNÉES",
         "👥 ÉQUIPES & PORTEFEUILLES",
         "🎮 PARAMÈTRES JEU",
@@ -210,6 +211,9 @@ def render():
         all_portfolios_tab()
     with tab_cmp:
         _compliance_tab()
+    with tab_params:   # v5.12 : le cœur de la plateforme ajusté par l'administrateur (ratios, formules, scénarios)
+        from components.core_params_ui import render as _core_params
+        _core_params()
     with tab_dq:
         _data_quality_tab()
     with tab_teams:

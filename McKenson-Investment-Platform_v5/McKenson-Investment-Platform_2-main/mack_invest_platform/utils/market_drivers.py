@@ -135,25 +135,33 @@ THEME_DRIVER = {
 # ══════════════════════════════════════════════════════════════════════════════
 def needed_tickers(market: str) -> list[str]:
     m = MARKETS[market]
-    ts = {m["t"], "^GSPC"}
+    ts = {m["t"], "^GSPC", "^VIX"}
     for k in FACTOR_SET[m["region"]]:
         f = FACTORS[k]["t"]
         ts.update(f if isinstance(f, tuple) else [f])
     ts.update(SECTOR_ETFS)
+    ts.update(HEAT_ASSETS)
     ts.update(LEADERS.get(m["region"], []))
     return sorted(ts)
 
 
+# Actifs ajoutés à la carte de chaleur sectorielle (au-delà des ETF SPDR)
+HEAT_ASSETS = {"VGK": "Actions Europe", "EEM": "Actions émergentes", "GLD": "Or", "TLT": "Obligations longues",
+               "BTC-USD": "Bitcoin"}
+HEAT_HORIZONS = {"1 J": 1, "1 S": 5, "1 M": 21, "3 M": 63}
+
+
 def fetch_closes(tickers: tuple, period: str = "2y") -> pd.DataFrame:
-    try:
-        import yfinance as yf
-        raw = yf.download(list(tickers), period=period, interval="1d", auto_adjust=True, progress=False, threads=True)
-        px = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]].rename(columns={"Close": tickers[0]})
-        if px.index.tz is not None:
-            px.index = px.index.tz_localize(None)
-        return px.sort_index().ffill(limit=3)
-    except Exception:
-        return pd.DataFrame()
+    """Clôtures quotidiennes, SANS recopie d'une séance sur l'autre (v5.12).
+
+    Avant : `ffill(limit=3)` sur un tableau mêlant indices US, pétrole/dollar (cotation quasi continue) et
+    bitcoin (week-end) → la ligne du jour, créée par le pétrole avant l'ouverture de Wall Street, recevait la
+    clôture d'hier du Nasdaq : variation 0,0 % partout (« Nasdaq stable », secteurs et géants vides).
+    Les tickers en échec sont dans `px.attrs["missing"]`."""
+    from utils import prices as P
+    px, missing = P.download_closes(tickers, period)
+    px.attrs["missing"] = missing
+    return px
 
 
 def _get(url: str, headers: dict | None = None, timeout: int = 8) -> bytes:
@@ -194,6 +202,7 @@ def fetch_reddit(subs=("wallstreetbets", "stocks", "investing", "StockMarket"), 
                     continue
                 posts.append(dict(sub=s, title=p.get("title", ""), score=int(p.get("score", 0) or 0),
                                   comments=int(p.get("num_comments", 0) or 0), flair=p.get("link_flair_text") or "",
+                                  created=float(p.get("created_utc") or 0),
                                   link="https://www.reddit.com" + p.get("permalink", "")))
         except Exception:
             continue
@@ -216,96 +225,204 @@ def fetch_stocktwits(symbol: str) -> tuple[list[dict], str]:
 # ══════════════════════════════════════════════════════════════════════════════
 #  ANALYSES (pures)
 # ══════════════════════════════════════════════════════════════════════════════
-def _factor_series(px: pd.DataFrame, key: str) -> pd.Series | None:
-    f = FACTORS[key]
-    t = f["t"]
-    if isinstance(t, tuple):
-        if not all(x in px for x in t):
-            return None
-        return np.log(px[t[0]] / px[t[1]]).diff()
+def _param(key: str, default):
+    try:
+        from utils.core_params import get
+        return get(key)
+    except Exception:
+        return default
+
+
+def _vol_method() -> str:
+    try:
+        from utils.core_params import formula
+        return formula("vol_methode")
+    except Exception:
+        return "historique"
+
+
+def _on_days(px: pd.DataFrame, t: str, days: pd.DatetimeIndex) -> pd.Series | None:
+    """Niveau d'un facteur ramené aux jours de cotation du marché analysé (dernier cours connu à ces dates)."""
+    from utils import prices as P
     if t not in px:
         return None
-    s = px[t]
+    s = P.true_closes(px[t])
+    if s.empty:
+        return None
+    return s.reindex(s.index.union(days)).ffill().reindex(days)
+
+
+def _factor_series(px: pd.DataFrame, key: str, days: pd.DatetimeIndex | None = None) -> pd.Series | None:
+    """Variation quotidienne du facteur, sur les jours de cotation du marché (`days`)."""
+    from utils import prices as P
+    f = FACTORS[key]
+    t = f["t"]
+    if days is None:
+        days = pd.DatetimeIndex(sorted(set().union(*[P.true_closes(px[c]).index for c in px.columns]))) \
+            if len(px.columns) else pd.DatetimeIndex([])
+    if isinstance(t, tuple):
+        a, b = _on_days(px, t[0], days), _on_days(px, t[1], days)
+        if a is None or b is None:
+            return None
+        return np.log(a / b).diff()
+    s = _on_days(px, t, days)
+    if s is None:
+        return None
     return s.diff() if f["kind"] == "diff" else np.log(s).diff()
 
 
-def attribution(px: pd.DataFrame, market: str, horizon: int = 5, lookback: int = 500, ridge: float = 2.0) -> dict:
-    """Décomposition du mouvement du marché par facteur (régression ridge sur rendements quotidiens)."""
+def _typical(y: pd.Series, horizon: int, window: int) -> float:
+    """Ampleur habituelle d'un mouvement sur `horizon` séances (écart-type), historique ou EWMA."""
+    y = y.dropna()
+    if len(y) < 40:
+        return np.nan
+    if _vol_method() == "ewma":
+        var = float((y ** 2).ewm(alpha=0.06).mean().iloc[-2]) if len(y) > 2 else np.nan   # λ = 0,94
+        return float(np.sqrt(var * horizon)) if var == var and var > 0 else np.nan
+    hist = y.iloc[-(window + horizon):-horizon] if len(y) > window + horizon else y.iloc[:-horizon]
+    roll = hist.rolling(horizon).sum().dropna()
+    return float(roll.std()) if len(roll) > 30 else float(hist.std() * np.sqrt(horizon)) if len(hist) > 30 else np.nan
+
+
+def attribution(px: pd.DataFrame, market: str, horizon: int = 5, lookback: int | None = None,
+                ridge: float | None = None) -> dict:
+    """Décomposition du mouvement du marché par facteur (régression ridge sur rendements quotidiens).
+
+    v5.12 : le marché est lu sur SES jours de cotation (jamais de séance recopiée) et les facteurs sont
+    ramenés à ces mêmes jours ; le z-score compare le mouvement aux mouvements PASSÉS (hors fenêtre)."""
+    from utils import prices as P
     m = MARKETS[market]
-    if m["t"] not in px or px[m["t"]].dropna().shape[0] < 120:
+    lookback = int(lookback or _param("fenetre_facteurs", 500))
+    ridge = float(_param("ridge", 2.0) if ridge is None else ridge)
+    if m["t"] not in px:
         return dict(ok=False, error="historique du marché indisponible")
-    y_all = np.log(px[m["t"]]).diff()
+    lvl = P.true_closes(px[m["t"]])
+    if len(lvl) < 120:
+        return dict(ok=False, error="historique du marché indisponible")
+    days = lvl.index
+    y_all = np.log(lvl).diff()
     keys = [k for k in FACTOR_SET[m["region"]] if FACTORS[k]["t"] != m["t"]]
-    X_all = pd.DataFrame({k: _factor_series(px, k) for k in keys})
+    X_all = pd.DataFrame({k: _factor_series(px, k, days) for k in keys}, index=days)
     X_all = X_all.dropna(axis=1, how="all")
-    data = pd.concat([y_all.rename("y"), X_all], axis=1, sort=True).dropna()
-    if len(data) < 120 or X_all.shape[1] == 0:
+    data = pd.concat([y_all.rename("y"), X_all], axis=1, sort=True).iloc[1:]
+    win = data.iloc[-horizon:]
+    move = float(win["y"].sum())
+    data_fit = data.dropna()
+    if len(data_fit) < 120 or X_all.shape[1] == 0:
         return dict(ok=False, error="facteurs indisponibles")
-    fit = data.iloc[-lookback:]
+    fit = data_fit.iloc[-lookback:]
     X, y = fit.drop(columns="y"), fit["y"]
     mu, sd = X.mean(), X.std().replace(0, np.nan)
     Z = ((X - mu) / sd).fillna(0.0).values
     yc = (y - y.mean()).values
     lam = ridge * len(Z) / 100.0
     b_std = np.linalg.solve(Z.T @ Z + lam * np.eye(Z.shape[1]), Z.T @ yc)
-    beta = pd.Series(b_std / sd.values, index=X.columns)
+    beta = pd.Series(b_std / sd.fillna(1.0).values, index=X.columns).where(sd.notna(), 0.0)
     pred = Z @ b_std
     r2 = float(1 - ((yc - pred) ** 2).sum() / (yc ** 2).sum()) if (yc ** 2).sum() > 0 else 0.0
-    win = data.iloc[-horizon:]
-    move = float(win["y"].sum())
-    fmove = win.drop(columns="y").sum()
+    fmove = win.drop(columns="y").sum(min_count=1).fillna(0.0)
     contrib = beta * fmove
-    roll = y_all.dropna().rolling(horizon).sum().dropna()
-    typ = float(roll.std()) if len(roll) > 30 else np.nan
+    typ = _typical(y_all, horizon, int(_param("vol_fenetre", 252)))
     rows = []
     for k in beta.index:
         rows.append(dict(key=k, label=FACTORS[k]["label"], move=float(fmove[k]), move_txt=FACTORS[k]["fmt"](float(fmove[k])),
                          beta=float(beta[k]), contrib=float(contrib[k])))
     rows.sort(key=lambda r: -abs(r["contrib"]))
     explained = float(contrib.sum())
+    start_ref = lvl.index[-horizon - 1] if len(lvl) > horizon else lvl.index[0]
     return dict(ok=True, market=market, horizon=horizon, move=move, move_pct=float(np.expm1(move)),
                 factors=rows, explained=explained, residual=move - explained, r2=r2, typical=typ,
-                z=move / typ if typ and typ == typ else np.nan, start=str(win.index[0].date()), end=str(win.index[-1].date()),
-                n_obs=len(fit))
+                z=move / typ if typ and typ == typ else np.nan, start=str(start_ref.date()), end=str(win.index[-1].date()),
+                last_close=float(lvl.iloc[-1]), ref_close=float(lvl.loc[start_ref]), n_obs=len(fit))
 
 
 def technical(px: pd.Series) -> dict:
-    s = px.dropna()
+    from utils import prices as P
+    s = P.true_closes(px)
     if len(s) < 60:
         return dict(ok=False)
+    n_s, n_l = int(_param("mm_courte", 50)), int(_param("mm_longue", 200))
     last = float(s.iloc[-1])
-    ma50, ma200 = float(s.rolling(50).mean().iloc[-1]), float(s.rolling(200).mean().iloc[-1]) if len(s) >= 200 else np.nan
+    ma50 = float(s.rolling(n_s).mean().iloc[-1])
+    ma200 = float(s.rolling(n_l).mean().iloc[-1]) if len(s) >= n_l else np.nan
     hi = float(s.iloc[-252:].max())
     d = s.diff()
     up, dn = d.clip(lower=0).ewm(alpha=1 / 14).mean(), (-d.clip(upper=0)).ewm(alpha=1 / 14).mean()
     rsi = float(100 - 100 / (1 + up.iloc[-1] / dn.iloc[-1])) if dn.iloc[-1] > 0 else 100.0
-    r = lambda n: float(s.iloc[-1] / s.iloc[-n - 1] - 1) if len(s) > n else np.nan  # noqa: E731
+    r = lambda n: P.change(s, n)["ret"]  # noqa: E731
     trend = ("haussière" if last > ma50 > ma200 else "baissière" if last < ma50 < ma200 else
              "en correction dans une tendance haussière" if ma50 > ma200 else "en rebond dans une tendance baissière") \
         if ma200 == ma200 else ("haussière" if last > ma50 else "baissière")
     return dict(ok=True, last=last, ma50=ma50, ma200=ma200, vs_ma200=last / ma200 - 1 if ma200 == ma200 else np.nan,
-                drawdown=last / hi - 1, rsi=rsi, r1=r(1), r5=r(5), r21=r(21), r63=r(63), trend=trend)
+                drawdown=last / hi - 1, rsi=rsi, r1=r(1), r5=r(5), r21=r(21), r63=r(63), trend=trend,
+                mm_courte=n_s, mm_longue=n_l, date=str(s.index[-1].date()))
 
 
 def rotation(px: pd.DataFrame, horizon: int, bench: str = "^GSPC") -> pd.DataFrame:
+    """Rendement des ETF sectoriels sur l'horizon, chacun sur ses propres séances (NaN exclus, jamais 0 inventé)."""
+    from utils import prices as P
     rows = []
-    b = px[bench].dropna() if bench in px else None
-    rb = float(b.iloc[-1] / b.iloc[-horizon - 1] - 1) if b is not None and len(b) > horizon else np.nan
+    rb = P.change(px[bench], horizon)["ret"] if bench in px else np.nan
     for t, lab in SECTOR_ETFS.items():
-        if t in px and px[t].dropna().shape[0] > horizon:
-            s = px[t].dropna()
-            r = float(s.iloc[-1] / s.iloc[-horizon - 1] - 1)
-            rows.append(dict(ETF=t, Secteur=lab, Rendement=r, **{"Écart vs S&P 500": r - rb if rb == rb else np.nan}))
+        if t not in px:
+            continue
+        c = P.change(px[t], horizon)
+        if c["ok"] and c["ret"] == c["ret"]:
+            rows.append(dict(ETF=t, Secteur=lab, Rendement=c["ret"], **{"Écart vs S&P 500": c["ret"] - rb if rb == rb else np.nan},
+                             Date=str(c["end"].date())))
     return pd.DataFrame(rows).sort_values("Rendement", ascending=False).reset_index(drop=True) if rows else pd.DataFrame()
 
 
 def leaders_moves(px: pd.DataFrame, market: str, horizon: int) -> pd.DataFrame:
+    from utils import prices as P
     rows = []
     for t in LEADERS.get(MARKETS[market]["region"], []):
-        if t in px and px[t].dropna().shape[0] > horizon:
-            s = px[t].dropna()
-            rows.append(dict(Titre=t, Rendement=float(s.iloc[-1] / s.iloc[-horizon - 1] - 1)))
+        if t not in px:
+            continue
+        c = P.change(px[t], horizon)
+        if c["ok"] and c["ret"] == c["ret"]:
+            rows.append(dict(Titre=t, Rendement=c["ret"], Date=str(c["end"].date())))
     return pd.DataFrame(rows).sort_values("Rendement").reset_index(drop=True) if rows else pd.DataFrame()
+
+
+def heatmap_table(px: pd.DataFrame) -> pd.DataFrame:
+    """Carte de chaleur : performance par secteur / actif sur 1 J, 1 S, 1 M, 3 M et depuis le 1er janvier."""
+    from utils import prices as P
+    rows = []
+    ytd0 = pd.Timestamp(datetime.now().year, 1, 1)
+    for t, lab in {**SECTOR_ETFS, **HEAT_ASSETS}.items():
+        if t not in px:
+            continue
+        r = {"Secteur / actif": lab, "ETF": t}
+        any_ok = False
+        for h, n in HEAT_HORIZONS.items():
+            c = P.change(px[t], n)
+            r[h] = c["ret"]
+            any_ok |= bool(c["ok"])
+        r["Depuis 1er janv."] = P.change_since(px[t], ytd0)["ret"]
+        if any_ok:
+            rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def data_checks(px: pd.DataFrame, market: str) -> list[str]:
+    """Contrôles de cohérence affichés en tête d'analyse (au lieu de chiffres faux)."""
+    from utils import prices as P
+    out = []
+    t = MARKETS[market]["t"]
+    miss = [x for x in needed_tickers(market) if x not in px or P.true_closes(px[x]).empty]
+    if t in miss:
+        out.append(f"Cours du {market} ({t}) indisponibles : l'analyse ne peut pas être produite.")
+    elif P.stale(px[t], 5):
+        out.append(f"Dernière clôture du {market} ancienne ({P.true_closes(px[t]).index[-1]:%d/%m/%Y}) : "
+                   "la source Yahoo Finance semble en retard.")
+    sect = [x for x in SECTOR_ETFS if x in miss]
+    if sect:
+        out.append(f"ETF sectoriels sans cours ({len(sect)}/{len(SECTOR_ETFS)}) : {', '.join(sect)} — affichés « indisponible ».")
+    others = [x for x in miss if x not in sect and x != t]
+    if others:
+        out.append(f"Autres séries indisponibles : {', '.join(others[:10])}{' …' if len(others) > 10 else ''}.")
+    return out
 
 
 def news_view(market: str, rows: list[dict]) -> dict:
@@ -389,12 +506,23 @@ def adaptation(att: dict, tech: dict, regime: str | None, profile: str, social: 
     move, z = att.get("move", 0.0), att.get("z", np.nan)
     neg = move < 0
     dom = att["factors"][0] if att.get("factors") else None
-    if z == z and abs(z) < 1.2:
-        out.append(dict(qui="Marc ETING-FINANCIER", texte=f"Mouvement dans la norme (z = {z:+.1f} : moins de 1,2 écart-type) : "
-                                                         "pas de décision dans l'urgence, le plan d'investissement reste valable."))
+    z_n, z_f, z_x = _param("z_norme", 1.2), _param("z_fort", 2.0), _param("z_exceptionnel", 3.0)
+    if z == z and abs(z) < z_n:
+        out.append(dict(qui="Marc ETING-FINANCIER", texte=f"Mouvement dans la norme (z = {z:+.1f} : moins de {z_n:.1f} "
+                                                         "écart-type) : pas de décision dans l'urgence, le plan "
+                                                         "d'investissement reste valable."))
+    elif z == z and abs(z) >= z_x:
+        out.append(dict(qui="Aline DE MARGE", texte=f"Séance de stress : mouvement exceptionnel (z = {z:+.1f}, soit "
+                        f"{abs(z):.1f} fois l'ampleur habituelle). Ne pas vendre dans la panique ; vérifier que la perte "
+                        "potentielle reste sous votre limite, contrôler l'efficacité des couvertures, puis rééquilibrer "
+                        "par paliers plutôt que tout vendre."))
     elif z == z:
-        out.append(dict(qui="Aline DE MARGE", texte=f"Mouvement inhabituel (z = {z:+.1f}) : vérifier que la perte potentielle du "
-                                                    "portefeuille reste sous votre limite, rééquilibrer plutôt que tout vendre."))
+        out.append(dict(qui="Aline DE MARGE", texte=f"Mouvement {'fort' if abs(z) >= z_f else 'inhabituel'} "
+                        f"(z = {z:+.1f}) : vérifier que la perte potentielle du portefeuille reste sous votre limite, "
+                        "rééquilibrer plutôt que tout vendre."))
+    else:
+        out.append(dict(qui="Marc ETING-FINANCIER", texte="Ampleur du mouvement non mesurable (historique insuffisant) : "
+                        "pas de décision dans l'urgence."))
     if dom and abs(dom["contrib"]) > 0.25 * abs(move) and np.sign(dom["contrib"]) == np.sign(move):
         k = dom["key"]
         if k == "rates" and dom["move"] > 0:
@@ -426,12 +554,12 @@ def adaptation(att: dict, tech: dict, regime: str | None, profile: str, social: 
                         "Vérifier votre exposition aux titres concernés plutôt qu'à tout le marché."))
     if tech.get("ok"):
         if tech["vs_ma200"] == tech["vs_ma200"] and tech["vs_ma200"] < 0:
-            out.append(dict(qui="Mc Henson ALGO-RITHME", texte=f"Le marché est sous sa moyenne 200 jours ({tech['vs_ma200']:+.1%}) : "
+            out.append(dict(qui="Mc Henson ALGO-RITHME", texte=f"Le marché est sous sa moyenne {tech.get('mm_longue', 200)} jours ({tech['vs_ma200']:+.1%}) : "
                             "tendance de fond fragilisée, préférer des achats progressifs et des positions plus petites."))
-        if tech["rsi"] < 30:
+        if tech["rsi"] < _param("rsi_survente", 30):
             out.append(dict(qui="Thierry BALANCEMENT", texte=f"RSI {tech['rsi']:.0f} : zone de survente. Pour un horizon long, "
                             "renforcer par paliers (investissement programmé) plutôt qu'en une fois."))
-        elif tech["rsi"] > 70:
+        elif tech["rsi"] > _param("rsi_surachat", 70):
             out.append(dict(qui="Thierry BALANCEMENT", texte=f"RSI {tech['rsi']:.0f} : zone de surachat. Prendre une partie des gains "
                             "sur les lignes qui dépassent leur poids cible."))
     try:
@@ -454,10 +582,14 @@ def adaptation(att: dict, tech: dict, regime: str | None, profile: str, social: 
         out.append(dict(qui="Thierry BALANCEMENT", texte="Ce que font les meilleurs gérants (13F) : premiers secteurs "
                         + ", ".join(s[0].lower() for s in smart["sectors"][:3]) + " — à confronter au contexte actuel."))
     if port and port.get("ok"):
+        from utils.prices import fmt_pct
+        mv = float(np.expm1(att["move"])) if att.get("move") == att.get("move") else np.nan
+        imp = port["beta"] * mv if mv == mv else np.nan
         out.append(dict(qui="Aline DE MARGE", texte=f"Votre portefeuille a un bêta de {port['beta']:.2f} à ce marché : un mouvement "
-                        f"de {np.expm1(att['move']):+.1%} lui coûte ou lui rapporte environ {port['impact']:+.1%}. "
+                        f"de {fmt_pct(mv)} lui {'coûte' if imp < 0 else 'rapporte'} environ {fmt_pct(imp)} "
+                        f"(bêta × mouvement). "
                         + ("Bêta élevé : réduire les lignes les plus sensibles si cela dépasse votre tolérance."
-                           if port["beta"] > 1.1 else "Exposition mesurée.")))
+                           if port["beta"] > _param("beta_eleve", 1.1) else "Exposition mesurée.")))
     out.append(dict(qui="Constance Probité", texte=f"Toute modification reste soumise à votre profil {profile}, à votre politique "
                     "d'investissement et aux contrôles de conformité : rien n'est exécuté automatiquement."))
     return out
@@ -466,11 +598,13 @@ def adaptation(att: dict, tech: dict, regime: str | None, profile: str, social: 
 def analyse(market: str, horizon: int, px: pd.DataFrame, news_rows: list[dict] | None = None,
             reddit: list[dict] | None = None, twits: list[dict] | None = None, regime: str | None = None,
             profile: str = "Équilibré", port_impact: dict | None = None, smart: dict | None = None,
-            sources: dict | None = None) -> dict:
-    """Analyse complète : pourquoi, impact, adaptation, avis des membres du comité."""
+            sources: dict | None = None, intraday: dict | None = None, port_ctx: dict | None = None) -> dict:
+    """Analyse complète : pourquoi, impact, adaptation, avis des membres du comité,
+    + (v5.12) contrôles de données, carte de chaleur, intraday 1 h / 6 h, scénarios probabilisés et remédiation."""
+    checks = data_checks(px, market)
     att = attribution(px, market, horizon)
     if not att.get("ok"):
-        return dict(ok=False, error=att.get("error"))
+        return dict(ok=False, error=att.get("error"), checks=checks)
     tech = technical(px[MARKETS[market]["t"]])
     rot = rotation(px, horizon)
     lead = leaders_moves(px, market, horizon)
@@ -478,8 +612,19 @@ def analyse(market: str, horizon: int, px: pd.DataFrame, news_rows: list[dict] |
     so = social_view(market, reddit or [], twits or [])
     mv, z = att["move_pct"], att["z"]
     hz = {1: "sur la dernière séance", 5: "sur la semaine", 21: "sur le mois", 63: "sur 3 mois"}.get(horizon, f"sur {horizon} séances")
-    direction = "stable" if abs(z) < 0.3 else ("en hausse" if mv > 0 else "en baisse") if z == z else ("en hausse" if mv > 0 else "en baisse")
-    force = "" if z != z else (" (mouvement fort)" if abs(z) >= 2 else " (mouvement marqué)" if abs(z) >= 1.2 else " (dans la norme)")
+    z_s, z_n, z_f, z_x = (_param("z_stable", 0.3), _param("z_norme", 1.2), _param("z_fort", 2.0),
+                          _param("z_exceptionnel", 3.0))
+    if z == z:
+        direction = "stable" if abs(z) < z_s else ("en hausse" if mv > 0 else "en baisse")
+        force = (" (mouvement exceptionnel)" if abs(z) >= z_x else " (mouvement fort)" if abs(z) >= z_f
+                 else " (mouvement marqué)" if abs(z) >= z_n else " (dans la norme)")
+    else:
+        direction, force = ("en hausse" if mv > 0 else "en baisse" if mv < 0 else "inchangé"), ""
+    try:
+        d_end = pd.Timestamp(att["end"]).strftime("%d/%m")
+        hz = hz + (f" (séance du {d_end})" if horizon == 1 else f" (au {d_end})")
+    except Exception:
+        pass
     headline = f"{market} {direction} de {mv:+.1%} {hz}{force}."
     why = []
     for f in att["factors"][:4]:
@@ -543,9 +688,26 @@ def analyse(market: str, horizon: int, px: pd.DataFrame, news_rows: list[dict] |
             v.update(nom=m.get("nom", v["id"]), emoji=m.get("emoji", ""), couleur=m.get("couleur", "#94a3b8"))
     except Exception:
         pass
-    return dict(ok=True, market=market, horizon=horizon, headline=headline, attribution=att, technique=tech,
-                rotation=rot, leaders=lead, news=nv, social=so, why=why, impact=impact, adapt=adapt, voices=voices,
-                regime=regime, profile=profile, sources=sources or {}, built=datetime.now().strftime("%d/%m/%Y %H:%M"))
+    if intraday and intraday.get("ok"):
+        w1, w6 = intraday.get("w1") or {}, intraday.get("w6") or {}
+        parts = [f"{lab} {w['ret']:+.2%}" for lab, w in (("1 h", w1), ("6 h", w6)) if w.get("ok")]
+        if parts:
+            why.append(f"Intraday ({intraday.get('ticker')}) : " + " · ".join(parts) + ".")
+        for a_ in intraday.get("alerts", []):
+            adapt.insert(0, dict(qui="Mc Henson ALGO-RITHME", texte=a_ + " À confirmer avant toute décision : un mouvement "
+                                                                         "intraday peut se retourner dans la séance."))
+    an = dict(ok=True, market=market, horizon=horizon, headline=headline, attribution=att, technique=tech,
+              rotation=rot, leaders=lead, news=nv, social=so, why=why, impact=impact, adapt=adapt, voices=voices,
+              regime=regime, profile=profile, sources=sources or {}, built=datetime.now().strftime("%d/%m/%Y %H:%M"),
+              checks=checks, heat=heatmap_table(px), intraday=intraday)
+    try:
+        from utils import scenarios as SC
+        pc = port_ctx or {}
+        an["scen"] = SC.build(an, px, intraday, pc.get("vals"), pc.get("cash", 0.0), pc.get("port"), pc.get("hist"),
+                              (port_impact or {}).get("beta") if port_impact and port_impact.get("ok") else None)
+    except Exception as e:  # le cœur de l'analyse reste disponible même si les scénarios échouent
+        an["scen"] = dict(ok=False, error=f"{type(e).__name__}: {e}")
+    return an
 
 
 def llm_prompt(an: dict) -> str:
@@ -633,6 +795,24 @@ def build_pdf(an: dict, px: pd.DataFrame, llm_text: str | None = None) -> bytes:
                        ("Tendance", tech.get("trend", "—") if tech.get("ok") else "—"),
                        ("RSI 14", f"{tech['rsi']:.0f}" if tech.get("ok") else "—"),
                        ("Humeur réseaux sociaux", an["social"]["label"]), ("Titres d'actualité", str(an["news"]["n"]))]))
+    if an.get("checks"):
+        b += [("p", "**Contrôle des données**"), ("bullets", an["checks"])]
+    sc = an.get("scen") or {}
+    if sc.get("ok"):
+        from utils import scenarios as SC
+        b += SC.pdf_blocks(an, sc)
+    it = an.get("intraday") or {}
+    if it.get("ok"):
+        se = it.get("sentiment", {})
+        b += [("h", f"Évolution intraday ({it.get('ticker')}) et sentiment"),
+              ("table", [["Fenêtre", "Variation", "Volatilité (h)", "Plus haut / bas", "Sentiment"]] +
+               [[lab, f"{w['ret']:+.2%}" if w.get("ok") else "—", f"{w['vol_h']:.2%}" if w.get("ok") and w["vol_h"] == w["vol_h"] else "—",
+                 f"{w['hi']:,.0f} / {w['lo']:,.0f}".replace(",", " ") if w.get("ok") else "—",
+                 (f"{se.get(lab, {}).get('score'):+.2f} ({se.get(lab, {}).get('n', 0)} msg)"
+                  if se.get(lab, {}).get("score") == se.get(lab, {}).get("score") and se.get(lab, {}).get("n") else "—")]
+                for lab, w in (("1 h", it.get("w1") or {}), ("6 h", it.get("w6") or {}))], [2.2, 2.6, 3.0, 4.6, 5.0])]
+        if it.get("alerts"):
+            b.append(("bullets", it["alerts"]))
     b += [("h", "1. Pourquoi ?"), ("bullets", an["why"]), ("img", imgs["01_facteurs"], 17)]
     rows = [["Facteur", "Variation", "Sensibilité (β)", "Contribution"]]
     for f in att["factors"]:
@@ -642,6 +822,13 @@ def build_pdf(an: dict, px: pd.DataFrame, llm_text: str | None = None) -> bytes:
     for k in ("02_cours", "03_secteurs"):
         if k in imgs:
             b.append(("img", imgs[k], 16))
+    heat = an.get("heat")
+    if heat is not None and len(heat):
+        from utils.prices import fmt_pct
+        cols = [c for c in ("1 J", "1 S", "1 M", "3 M", "Depuis 1er janv.") if c in heat]
+        b.append(("table", [["Secteur / actif"] + cols] +
+                  [[r["Secteur / actif"]] + [fmt_pct(r[c]) for c in cols] for _, r in heat.iterrows()],
+                  [5.6] + [2.36] * len(cols)))
     b += [("h", "2. Quel impact ?"), ("bullets", an["impact"] or ["—"])]
     b += [("h", "3. Comment s'adapter ? (pistes à valider, aucun ordre n'est passé)"),
           ("table", [["Proposé par", "Piste"]] + [[a["qui"], a["texte"]] for a in an["adapt"]], [3.8, 13.6])]

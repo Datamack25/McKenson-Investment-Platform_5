@@ -121,7 +121,8 @@ def market_alerts(px: pd.DataFrame, missing: list) -> list:
     for t, name in WATCH.items():
         if t not in px.columns or t in missing:
             continue
-        s = px[t].dropna()
+        from utils.prices import true_closes
+        s = true_closes(px[t])          # v5.12 : sans les séances recopiées (ffill) qui donnaient 0 %
         if len(s) < 260:
             continue
         r = np.log(s).diff().dropna()
@@ -167,7 +168,8 @@ def volatility_alerts(px: pd.DataFrame, missing: list) -> list:
     out = []
     if "^VIX" not in px.columns or "^VIX" in missing:
         return out
-    v = px["^VIX"].dropna()
+    from utils.prices import true_closes
+    v = true_closes(px["^VIX"])
     if len(v) < 10:
         return out
     now, wk = float(v.iloc[-1]), float(v.iloc[-6])
@@ -198,7 +200,8 @@ def volatility_alerts(px: pd.DataFrame, missing: list) -> list:
 def rates_alerts(px: pd.DataFrame, missing: list) -> list:
     out = []
     if "^TNX" in px.columns and "^TNX" not in missing:
-        t = px["^TNX"].dropna()
+        from utils.prices import true_closes
+        t = true_closes(px["^TNX"])
         if len(t) > 6:
             d = float(t.iloc[-1] - t.iloc[-6])
             th = _thresholds()

@@ -49,7 +49,7 @@ def render():
         theme = st.radio("Thème des images", ["Clair", "Sombre"], horizontal=True, key="rep_theme")
     with c3:
         with_ml = st.checkbox("Inclure l'avis du modèle ML", value=True, key="rep_ml",
-                              help="Utilise les signaux de la page IA Marchés (entraînement mis en cache)")
+                              help="Utilise les signaux de la page Analyse Marché (entraînement mis en cache)")
     port = ports[pid][1]
     holdings = tuple(sorted((port.get("holdings") or {}).keys()))
 
