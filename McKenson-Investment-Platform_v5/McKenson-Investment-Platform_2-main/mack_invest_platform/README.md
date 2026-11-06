@@ -1,13 +1,40 @@
-📈 McKenson Investment Platform - MIP — version 5.11.0
+📈 McKenson Investment Platform - MIP — version 5.12.0
 A full-featured investment simulation platform built with Streamlit + yfinance.
 
-Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.11.0 (octobre 2026).
+Plateforme créée par **Mackenson CINEUS**, diplômé d'un MBA Finance de marché — version 5.12.0 (novembre 2026).
 
 > ⚠️ **Avertissement** — Plateforme purement éducative : aucune opération n'est exécutée sur un marché réel et
 > rien de ce qui y est présenté (signaux, allocations, stratégies, rapports, alertes) ne constitue un conseil en
 > investissement, une recommandation personnalisée ou une sollicitation. Mackenson CINEUS n'est pas responsable
 > des décisions prises par les utilisateurs et n'est pas engagé par les décisions ou les conseils issus de cette
 > plateforme. Les performances passées ne préjugent pas des performances futures.
+
+Nouveautés v5.12 — Analyse Marché : scénarios probabilisés, cœur paramétrable, fin des faux « 0,0 % »
+
+🐞 **Correction des « +0,0 % »** (Nasdaq « stable », z = 0, bêta × 0 %, graphiques sectoriels et grandes capitalisations
+vides) : les cours d'actifs aux calendriers différents (indices US, pétrole/dollar quasi continus, bitcoin le week-end)
+étaient téléchargés ensemble puis recopiés d'une ligne sur l'autre (`ffill`) ; la ligne du jour, créée par le pétrole
+avant l'ouverture de Wall Street, recevait la clôture de la veille du Nasdaq → variation nulle partout. Nouveau module
+`utils/prices.py` : chaque série est lue sur ses propres séances, la variation se calcule entre deux clôtures réelles,
+une donnée manquante s'affiche « indisponible » (jamais 0 %), la date de la séance est affichée, contrôles de cohérence
+en tête d'analyse. Corrigé aussi dans les alertes automatiques.
+
+🧠 **« IA Marchés » devient « Analyse Marché »**, avec : **note de synthèse du comité** (scénarios haussier / central /
+baissier avec probabilités totalisant 100 %, signaux chiffrés + catalyseurs qualitatifs, « ce qui pourrait faire
+basculer », historique des révisions), **carte de chaleur** sectorielle (1 J, 1 S, 1 M, 3 M, depuis le 1er janvier +
+impact attendu par scénario), **évolution et sentiment sur 1 h et 6 h** (barres 5 min NQ=F / ^NDX, actualités, Reddit,
+StockTwits horodatés, alertes de bascule), **plans de remédiation** par scénario et constats sur le portefeuille
+(plafonds États-Unis / tech-IA / ligne, bêta), **diagnostic des couvertures par options** (notionnel delta-ajusté, puts
+trop hors de la monnaie, mauvais sous-jacent, échéance).
+
+📄 **Rapports** : en cas de grosse perte (séance, semaine ou recul depuis le plus haut — seuils admin), le rapport du
+comité (PDF + e-mail) intègre l'analyse de marché, les scénarios, la remédiation et le diagnostic des couvertures.
+
+🧮 **Admin → « Paramètres financiers »** : le cœur garde ses valeurs par défaut, l'administrateur peut surcharger
+33 ratios et seuils (bornés), la méthode de volatilité, la formule du score de scénario (évaluation sécurisée), les
+scénarios (probabilités a priori ou forcées, impacts par secteur, remédiation), les catalyseurs et ses plafonds
+personnels ; historique des modifications, export / import JSON, retour aux valeurs par défaut. Stockage en base
+(table hedge_fund_state), mention dans les rapports quand des paramètres personnalisés sont actifs.
 
 Nouveautés v5.11 — Tracking Best AM, comparaison avec les meilleurs gérants, analyse complète du marché
 
@@ -49,7 +76,7 @@ portefeuilles au choix ou le fichier importé, comparés aux allocations des mei
 regarder) sur la page Rapports et dans les PDF du comité, mensuel et détaillé, ainsi que dans l'e-mail du lundi (le job
 hebdomadaire télécharge les 13F une fois par exécution).
 
-🧑‍⚖️ **IA Marchés → « Analyse du comité »** : « le Nasdaq est négatif : pourquoi, quel impact, comment s'adapter ? ». Pour 12
+🧑‍⚖️ **Analyse Marché → « Analyse du comité »** : « le Nasdaq est négatif : pourquoi, quel impact, comment s'adapter ? ». Pour 12
 marchés (Nasdaq 100, S&P 500, Dow, Russell 2000, CAC 40, Euro Stoxx 50, DAX, Nikkei, émergents, or, pétrole, bitcoin) et 4
 horizons : décomposition du mouvement par facteur (régression ridge sur 2 ans : taux 10 ans, dollar, VIX, pétrole, crédit,
 euro, yen, Wall Street), part propre au marché, ampleur inhabituelle (z-score), tendance et RSI, rotation sectorielle, grandes
@@ -170,7 +197,7 @@ Nouveautés v5.3 — Comité d'investissement virtuel
    professionnel, synthèse et recommandations, décisions à prendre) + PDF détaillé ; page Rapports et
    e-mail du lundi (GitHub Actions) pour chaque portefeuille suivi.
 🌦️ Régime de marché unifié : le régime à 8 facteurs du comité est OFFICIEL (allocations, couvertures,
-   stratégies d'options) ; le mélange gaussien d'IA Marchés sert de contrôle croisé.
+   stratégies d'options) ; le mélange gaussien d'Analyse Marché sert de contrôle croisé.
 🖱️ Ergonomie : bandeaux qui s'arrêtent au survol, barre d'onglets défilante, nouvelles équipes et
    comparaison des performances par équipe, mention légale en pied de page et dans les rapports uniquement.
 
@@ -225,7 +252,7 @@ Public Side
 🧮 Portfolio Optimizer — Markowitz + CVaR, efficient frontier, correlation heatmap
 🏆 Leaderboard — team rankings, benchmark comparison (SPY/QQQ/CAC40/Gold/BTC), risk-return map
 Nouveautés v5 — Intelligence artificielle
-🧠 IA Marchés — machine learning appliqué aux informations financières, macro-économiques et géopolitiques :
+🧠 Analyse Marché — machine learning appliqué aux informations financières, macro-économiques et géopolitiques :
 régime de marché (mélange gaussien : Crise / Ralentissement / Reprise / Expansion) + alerte inflation ;
 tableau de bord macro (VIX, courbe 10 ans – 3 mois, taux, dollar, pétrole, cuivre/or, crédit HY, tendance S&P 500) ;
 lecture des actualités Google News : thèmes géopolitiques (conflits, sanctions, désescalade, choc énergétique) et économiques (banques centrales, inflation, récession, croissance), indice de risque géopolitique, matrice d'impact thèmes × actifs ;
@@ -366,7 +393,7 @@ mack_invest_platform/      # McKenson Investment Platform (MIP)
 │   ├── dashboard.py
 │   ├── trading.py
 │   ├── technical.py
-│   ├── ai_markets.py       # 🧠 IA Marchés (régime, macro, géopolitique, signaux ML, conseils)
+│   ├── ai_markets.py       # 🧠 Analyse Marché (régime, macro, géopolitique, signaux ML, conseils)
 │   ├── auto_portfolio.py   # 🤖 Auto-Portefeuille (construction, backtest, risques, exports, exécution)
 │   ├── hedge_fund.py       # 🦅 Hedge Fund Agent (briefing, allocation du desk, conseils, journal)
 │   ├── portfolio_upload.py # 📥 Conseil portefeuille : fichier importé analysé par le comité (v5.5)

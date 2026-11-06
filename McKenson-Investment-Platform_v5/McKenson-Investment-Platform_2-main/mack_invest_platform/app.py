@@ -381,7 +381,7 @@ pages = {
     "🏠 Dashboard":           "dashboard",
     "💼 Trading Desk":        "trading",
     "📊 Technique":           "technical",
-    "🧠 IA Marchés":          "ai_markets",
+    "🧠 Analyse Marché":      "ai_markets",
     "🤖 Auto-Portefeuille":   "auto_portfolio",
     "🦅 Hedge Fund Agent":    "hedge_fund",
     "📥 Conseil portefeuille": "portfolio_upload",
