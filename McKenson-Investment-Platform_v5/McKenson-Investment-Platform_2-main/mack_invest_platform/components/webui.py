@@ -425,7 +425,7 @@ def render_footer():
        McKenson Asset Management<br>Plateforme éducative de simulation d'investissement.<br>
        Créée par <b style="color:#e2e8f0;">{AUTHOR}</b>, {AUTHOR_TITLE}.<br>
        Version <b style="color:#00d4ff;">{APP_VERSION}</b> · {APP_RELEASE}</div>
-  <div><h4>Plateforme</h4>Trading Desk · ETF · Stratégies d'options<br>IA Marchés · Auto-Portefeuille IA<br>Optimiseur · Rapports PDF · Classement<br>Contrôles de conformité pré-négociation</div>
+  <div><h4>Plateforme</h4>Trading Desk · ETF · Stratégies d'options<br>Analyse Marché · Auto-Portefeuille IA<br>Optimiseur · Rapports PDF · Classement<br>Contrôles de conformité pré-négociation</div>
   <div><h4>Données</h4>Cours : Yahoo Finance (différé) · Actualités : Google News<br>ML : scikit-learn · Options : Black-Scholes<br>Sauvegarde : base PostgreSQL</div>
   <div class="mam-legal">© {year} {AUTHOR} — McKenson Asset Management — v{APP_VERSION}.<br>{DISCLAIMER}</div>
 </div>""",
