@@ -27,8 +27,8 @@ def render():
     keys = CP.custom_keys()
     if keys:
         st.info(f"🧮 {len(keys)} paramètre(s) personnalisé(s) actif(s) : {', '.join(keys[:12])}{' …' if len(keys) > 12 else ''}")
-    t1, t2, t3, t4, t5 = st.tabs(["📐 RATIOS & SEUILS", "🧪 FORMULES", "🎲 SCÉNARIOS", "⚡ CATALYSEURS",
-                                  "📜 HISTORIQUE & EXPORT"])
+    t1, t2, t3, t4, t6, t7, t5 = st.tabs(["📐 RATIOS & SEUILS", "🧪 FORMULES", "🎲 SCÉNARIOS", "⚡ CATALYSEURS",
+                                          "🧊 LIGNES FIGÉES", "🧩 COMPOSITIONS", "📜 HISTORIQUE & EXPORT"])
     with t1:
         _values_tab()
     with t2:
@@ -37,6 +37,10 @@ def render():
         _scenarios_tab()
     with t4:
         _catalysts_tab()
+    with t6:
+        _frozen_tab()
+    with t7:
+        _compositions_tab()
     with t5:
         _history_tab()
 
@@ -230,4 +234,52 @@ def _history_tab():
     if st.button("☢️ Tout remettre par défaut (valeurs, formules, scénarios, catalyseurs)", key="cp_reset_all"):
         CP.reset("all", _who())
         st.success("Cœur de la plateforme remis par défaut.")
+        st.rerun()
+
+
+def _frozen_tab():
+    st.caption("Lignes que vous décidez de ne pas toucher (conviction, fiscalité, contrainte personnelle). Le comité ne "
+               "propose ni vente ni achat sur ces lignes, mais tient compte de leur exposition pour ajuster le reste du "
+               "portefeuille. Portefeuille « * » = tous les portefeuilles.")
+    df = pd.DataFrame(CP.frozen() or [dict(ticker="", portefeuille="*", raison="")])
+    ed = st.data_editor(df.rename(columns={"ticker": "Ticker", "portefeuille": "Portefeuille", "raison": "Raison"}),
+                        num_rows="dynamic", hide_index=True, use_container_width=True, key="cp_frozen")
+    c1, c2 = st.columns(2)
+    if c1.button("💾 Enregistrer les lignes figées", type="primary", key="cp_frozen_save", use_container_width=True):
+        rows = [dict(ticker=r["Ticker"], portefeuille=r["Portefeuille"], raison=r["Raison"]) for _, r in ed.iterrows()
+                if isinstance(r.get("Ticker"), str) and r["Ticker"].strip()]
+        ok, errs = CP.set_frozen(rows, _who())
+        if ok:
+            st.success(f"{len(rows)} ligne(s) figée(s).")
+            _persist_note()
+        for e in errs:
+            st.error(e)
+    if c2.button("↩️ Aucune ligne figée", key="cp_frozen_reset", use_container_width=True):
+        CP.reset("frozen", _who())
+        st.rerun()
+
+
+def _compositions_tab():
+    st.caption("Ventilation sectorielle utilisée par le stress des scénarios pour les ETF et indices larges (SPY, VOO, "
+               "IWDA… pour le S&P 500 ; QQQ, PANX… pour le Nasdaq 100). Les lignes non classées sont traitées comme le "
+               "S&P 500. Les poids de chaque colonne doivent totaliser 100 %.")
+    comp = CP.compositions()
+    df = pd.DataFrame({k: [comp[k].get(sec, 0.0) * 100 for sec in CP.SECTORS] for k in CP.COMPOSITION_KEYS},
+                      index=CP.SECTORS)
+    df.index.name = "Secteur / actif"
+    ed = st.data_editor(df, use_container_width=True, key="cp_comp",
+                        column_config={k: st.column_config.NumberColumn(lab + " (%)", min_value=0, max_value=100, step=0.5)
+                                       for k, lab in CP.COMPOSITION_KEYS.items()})
+    st.caption(" · ".join(f"{lab} : {ed[k].sum():.1f} %" for k, lab in CP.COMPOSITION_KEYS.items()))
+    c1, c2 = st.columns(2)
+    if c1.button("💾 Enregistrer les compositions", type="primary", key="cp_comp_save", use_container_width=True):
+        ok, errs = CP.set_compositions({k: {sec: float(ed.loc[sec, k]) / 100 for sec in ed.index}
+                                        for k in CP.COMPOSITION_KEYS}, _who())
+        if ok:
+            st.success("Compositions enregistrées.")
+            _persist_note()
+        for e in errs:
+            st.error(e)
+    if c2.button("↩️ Compositions par défaut", key="cp_comp_reset", use_container_width=True):
+        CP.reset("compositions", _who())
         st.rerun()

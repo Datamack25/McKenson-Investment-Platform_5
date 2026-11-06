@@ -355,6 +355,7 @@ def _synthesis(an: dict):
         for w in sc["watch"]:
             st.caption("• " + w)
     _remediation_block(sc)
+    _plan_block(sc)
     hist = []
     try:
         from utils import core_params as CP
@@ -502,3 +503,46 @@ def _hedge_block(an: dict):
                                              na_rep="—"), hide_index=True, use_container_width=True)
     st.caption("Gain estimé = revalorisation Black-Scholes de chaque option entre le cours d'avant et le cours actuel du "
                "sous-jacent (volatilité de l'option conservée). Notionnel delta = contrats × multiplicateur × delta × cours.")
+
+
+def _plan_block(sc: dict):
+    """v5.13 : stress des scénarios sur le portefeuille, plan par phases, processus, autocritique."""
+    ps, plan, cr, pr = sc.get("portfolio") or {}, sc.get("plan") or {}, sc.get("critique") or {}, sc.get("process") or []
+    if ps.get("ok"):
+        st.markdown("**🧪 Stress des scénarios sur votre portefeuille**")
+        cols = st.columns(len(sc["scenarios"]) + 1)
+        for c, s in zip(cols, sc["scenarios"]):
+            v = ps["scen"][s["id"]]
+            c.markdown(kpi(s["nom"].split(" — ")[0], f"{v['pct']:+.1%}", f"{v['pnl']:+,.0f} $".replace(",", " "),
+                           "#00ff88" if v["pct"] > 0 else "#ff3b6b"), unsafe_allow_html=True)
+        cols[-1].markdown(kpi("Espérance pondérée", f"{ps['expected']:+.1%}",
+                              f"limite IPS {-abs(ps['perte_max']):.0%}" if ps.get("perte_max") else "",
+                              "#ff3b6b" if ps.get("breach") else "#e2e8f0"), unsafe_allow_html=True)
+        if ps.get("breach"):
+            st.error("Le pire scénario dépasse la perte maximale acceptée dans votre politique d'investissement.")
+        if ps.get("unclassified"):
+            st.caption(f"Lignes non classées par secteur (traitées comme le S&P 500) : {', '.join(ps['unclassified'][:8])}")
+    if plan.get("ok") and plan["actions"]:
+        st.markdown("**🗓️ Plan d'action par phases** — à valider, rien n'est exécuté automatiquement")
+        if plan.get("frozen_note"):
+            st.info("🧊 " + plan["frozen_note"])
+        df = pd.DataFrame([{"Phase": a["phase"], "Action": a["action"],
+                            "Montant": a["montant"] if a.get("montant") else None, "Lignes": a["lignes"],
+                            "Pourquoi": a["pourquoi"], "Qui": a["qui"]} for a in plan["actions"]])
+        st.dataframe(df.style.format({"Montant": lambda x: "—" if x is None or x != x else f"{x:,.0f} $".replace(",", " ")}),
+                     hide_index=True, use_container_width=True)
+    if pr:
+        st.markdown("**🧭 Processus d'investissement — où en est-on ?**")
+        st.markdown("".join(f'<div style="font-size:.78rem;margin:2px 0">{"✅" if r["ok"] else "⚠️"} <b>{_h.escape(r["etape"])}</b>'
+                            f' — <span style="color:#94a3b8">{_h.escape(r["detail"])}</span></div>' for r in pr),
+                    unsafe_allow_html=True)
+    if cr:
+        col = "#00ff88" if cr["note"] >= 8 else "#ffd700" if cr["note"] >= 6 else "#ff3b6b"
+        st.markdown(f'<div style="border:1px solid {col}55;border-left:4px solid {col};border-radius:8px;padding:8px 12px;'
+                    f'margin-top:8px;background:rgba(0,0,0,.2)"><div style="font-family:Rajdhani;font-weight:700;color:{col}">'
+                    f'🔎 Autocritique du comité — {cr["note"]:g}/10 · {_h.escape(cr["verdict"])} '
+                    f'<span style="color:#64748b;font-weight:400">({_h.escape(cr["qui"])})</span></div>'
+                    '<ul style="padding-left:18px;margin:4px 0;font-size:.76rem">'
+                    + _bullets(cr["faiblesses"] or ["Aucune faiblesse majeure relevée."])
+                    + _bullets([f"À améliorer : {x}" for x in cr["ameliorations"]]) + "</ul></div>",
+                    unsafe_allow_html=True)
