@@ -1,0 +1,39 @@
+# Tests automatisés de MAM (v5.4) : moteurs (conformité, comité, risque, calibration, performance,
+# backtest, journal des écarts, sentiment, qualité des données, secteurs) + test de fumée des pages.
+# Gratuit sur GitHub Actions. Aucun secret nécessaire : pas de réseau de marché, pas de base de données.
+name: MAM — tests automatisés
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:            # bouton « Run workflow » pour lancer les tests à la main
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trouver le dossier de l'application
+        run: |
+          F=$(find . -path ./.git -prune -o -path '*/tests/conftest.py' -print | head -1)
+          APP_DIR=$(dirname "$(dirname "$F")")
+          echo "Dossier de l'application : $APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          cd "$APP_DIR"
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Lancer les tests
+        run: |
+          cd "$APP_DIR"
+          python -m pytest -q --maxfail=5
